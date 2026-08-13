@@ -1,12 +1,22 @@
-const CACHE_NAME = "medication-app-v2";
+const CACHE_NAME = "medication-app-v3";
 const base = self.location.pathname.substring(0, self.location.pathname.lastIndexOf("/"));
 const ASSETS = [
   base + "/",
   base + "/manifest.webmanifest",
-  base + "/medication-icon.svg",
-  base + "/noct_main.webp",
-  base + "/lux_main.webp",
-  base + "/saku_main.webp",
+  base + "/medicine192.png",
+  base + "/medicine512.png",
+  base + "/noct.main.png",
+  base + "/noct.ed.png",
+  base + "/noct.ok.png",
+  base + "/noct.good.png",
+  base + "/lux.main.png",
+  base + "/lux.ed.png",
+  base + "/lux.ok.png",
+  base + "/lux.good.png",
+  base + "/saku.main.png",
+  base + "/saku.ed.png",
+  base + "/saku.ok.png",
+  base + "/saku.good.png",
   base + "/morning.webp",
   base + "/lunch.webp",
   base + "/dinner.webp",

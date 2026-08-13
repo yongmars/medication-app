@@ -47,6 +47,13 @@ export const metadata: Metadata = {
   title: APP_NAME,
   description: APP_DESCRIPTION,
   manifest: `${basePath}/manifest.webmanifest`,
+  icons: {
+    icon: [
+      { url: `${basePath}/medicine192.png`, sizes: "192x192", type: "image/png" },
+      { url: `${basePath}/medicine512.png`, sizes: "512x512", type: "image/png" },
+    ],
+    apple: [{ url: `${basePath}/medicine192.png`, sizes: "192x192", type: "image/png" }],
+  },
   openGraph: {
     type: "website",
     locale: "ja_JP",

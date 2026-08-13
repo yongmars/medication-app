@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { getMedicationPhotos } from "../lib/medicationPhotos";
 import {
   AS_NEEDED_RECORDS_STORAGE_KEY,
@@ -24,6 +24,7 @@ import {
 } from "../lib/medications";
 
 type Character = "noct" | "lux" | "saku";
+type CharacterScene = "main" | "ed" | "ok" | "good";
 
 const GROUP_CHARACTER: Record<HomeTiming, Character> = {
   morning: "saku",
@@ -34,6 +35,26 @@ const GROUP_CHARACTER: Record<HomeTiming, Character> = {
 };
 
 const CHARACTER_LABELS: Record<Character, string> = { noct: "ノクト", lux: "ルクス", saku: "朔" };
+const CHARACTER_IMAGES: Record<Character, Record<CharacterScene, string>> = {
+  noct: {
+    main: "noct.main.png",
+    ed: "noct.ed.png",
+    ok: "noct.ok.png",
+    good: "noct.good.png",
+  },
+  lux: {
+    main: "lux.main.png",
+    ed: "lux.ed.png",
+    ok: "lux.ok.png",
+    good: "lux.good.png",
+  },
+  saku: {
+    main: "saku.main.png",
+    ed: "saku.ed.png",
+    ok: "saku.ok.png",
+    good: "saku.good.png",
+  },
+};
 const GROUP_MESSAGES: Record<HomeTiming, string> = {
   morning: "おはようございます。\n朝のお薬を確認しよう。",
   lunch: "お昼のお薬だよ。\n飲んだらチェックしてね！",
@@ -42,12 +63,18 @@ const GROUP_MESSAGES: Record<HomeTiming, string> = {
   as_needed: "飲む前に用法・用量を\nもう一度確認しよう。",
 };
 
+const SCENE_MESSAGES: Record<Exclude<CharacterScene, "main">, string> = {
+  ed: "お薬を確認して、\n飲んだら記録してね。",
+  ok: "飲んだ記録ができたよ！",
+  good: "この時間帯のお薬は完了！\nよくできました。",
+};
+
 const TAB_STYLES: Record<HomeTiming, { icon: string; active: string }> = {
   morning: { icon: "morning.webp", active: "bg-amber-500 text-white shadow-amber-500/30" },
   lunch: { icon: "lunch.webp", active: "bg-sky-500 text-white shadow-sky-500/30" },
   dinner: { icon: "dinner.webp", active: "bg-orange-500 text-white shadow-orange-500/30" },
   bedtime: { icon: "bedtime.webp", active: "bg-indigo-500 text-white shadow-indigo-500/30" },
-  as_needed: { icon: "medication-icon.svg", active: "bg-purple-600 text-white shadow-purple-500/30" },
+  as_needed: { icon: "medicine192.png", active: "bg-purple-600 text-white shadow-purple-500/30" },
 };
 
 const GROUP_MINUTES: Record<MedicationTimingGroup, number> = {
@@ -91,6 +118,22 @@ const getFormattedDate = () => {
   return `${adjusted.getMonth() + 1}月${adjusted.getDate()}日（${dayNames[adjusted.getDay()]}）の服薬予定`;
 };
 
+const isTimingGroupComplete = (
+  group: MedicationTimingGroup,
+  medications: Medication[],
+  records: DailyMedicationRecords,
+  today: string
+) => {
+  const timingsWithMedication = GROUP_TIMINGS[group].filter((timing) =>
+    medications.some((medication) => medication.timings.includes(timing))
+  );
+  return timingsWithMedication.length > 0 && timingsWithMedication.every((timing) => {
+    const timingMedications = medications.filter((medication) => medication.timings.includes(timing));
+    const checkedIds = records[today]?.[timing]?.checkedMedicationIds ?? [];
+    return timingMedications.every((medication) => checkedIds.includes(medication.id));
+  });
+};
+
 export default function Home() {
   const basePath = process.env.NEXT_PUBLIC_BASE_PATH || "";
   const [mounted, setMounted] = useState(false);
@@ -101,6 +144,8 @@ export default function Home() {
   const [photoUrls, setPhotoUrls] = useState<Record<number, string>>({});
   const [expandedPhoto, setExpandedPhoto] = useState<{ name: string; url: string } | null>(null);
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [characterSceneOverride, setCharacterSceneOverride] = useState<CharacterScene | null>("main");
+  const characterSceneTimer = useRef<number | null>(null);
 
   const today = getAppDateString();
   const availableTabs = useMemo(() => getAvailableTabs(medications), [medications]);
@@ -111,9 +156,29 @@ export default function Home() {
   const todayAsNeeded = asNeededRecords.filter((record) => getAppDateString(new Date(record.takenAt)) === today);
   const activeTab = selectedTab && availableTabs.includes(selectedTab) ? selectedTab : getClosestAvailableTab(medications);
   const character = activeTab ? GROUP_CHARACTER[activeTab] : "noct";
-  const message = activeTab ? GROUP_MESSAGES[activeTab] : "設定からお薬を登録してね。";
+  const baseCharacterScene: CharacterScene = activeTab && activeTab !== "as_needed"
+    ? isTimingGroupComplete(activeTab, medications, records, today) ? "good" : "ed"
+    : "main";
+  const characterScene = characterSceneOverride ?? baseCharacterScene;
+  const message = characterScene === "main"
+    ? activeTab ? GROUP_MESSAGES[activeTab] : "設定からお薬を登録してね。"
+    : SCENE_MESSAGES[characterScene];
+  const characterImage = CHARACTER_IMAGES[character][characterScene];
+
+  const showCharacterScene = (scene: CharacterScene, duration = 1400) => {
+    if (characterSceneTimer.current) window.clearTimeout(characterSceneTimer.current);
+    setCharacterSceneOverride(scene);
+    characterSceneTimer.current = window.setTimeout(() => {
+      setCharacterSceneOverride(null);
+      characterSceneTimer.current = null;
+    }, duration);
+  };
 
   useEffect(() => {
+    characterSceneTimer.current = window.setTimeout(() => {
+      setCharacterSceneOverride(null);
+      characterSceneTimer.current = null;
+    }, 1400);
     const hydrateTimer = window.setTimeout(() => {
       const storedMedications = readMedications();
       setMedications(storedMedications);
@@ -134,6 +199,7 @@ export default function Home() {
     window.addEventListener("beforeinstallprompt", handleBeforeInstall);
     return () => {
       window.clearTimeout(hydrateTimer);
+      if (characterSceneTimer.current) window.clearTimeout(characterSceneTimer.current);
       window.removeEventListener("beforeinstallprompt", handleBeforeInstall);
     };
   }, []);
@@ -164,6 +230,7 @@ export default function Home() {
   const toggleMedication = (timing: ScheduledTiming, medicationId: number) => {
     const timingMedications = getMedicationsForTiming(timing);
     const previousIds = records[today]?.[timing]?.checkedMedicationIds ?? [];
+    const wasChecked = previousIds.includes(medicationId);
     const nextIds = previousIds.includes(medicationId)
       ? previousIds.filter((id) => id !== medicationId)
       : [...previousIds, medicationId];
@@ -175,14 +242,16 @@ export default function Home() {
         [timing]: { checkedMedicationIds: nextIds, completed },
       },
     });
+    if (wasChecked) {
+      if (characterSceneTimer.current) window.clearTimeout(characterSceneTimer.current);
+      setCharacterSceneOverride(null);
+    } else {
+      showCharacterScene("ok");
+    }
   };
 
   const isGroupComplete = (group: MedicationTimingGroup) => {
-    const timingsWithMedication = GROUP_TIMINGS[group].filter((timing) => getMedicationsForTiming(timing).length > 0);
-    return timingsWithMedication.length > 0 && timingsWithMedication.every((timing) => {
-      const checkedIds = records[today]?.[timing]?.checkedMedicationIds ?? [];
-      return getMedicationsForTiming(timing).every((medication) => checkedIds.includes(medication.id));
-    });
+    return isTimingGroupComplete(group, medications, records, today);
   };
 
   const recordAsNeeded = (medication: Medication) => {
@@ -195,6 +264,7 @@ export default function Home() {
     }, ...asNeededRecords];
     setAsNeededRecords(next);
     localStorage.setItem(AS_NEEDED_RECORDS_STORAGE_KEY, JSON.stringify(next));
+    showCharacterScene("ok");
   };
 
   const renderMedicationCard = (medication: Medication, timing: ScheduledTiming) => {
@@ -227,7 +297,7 @@ export default function Home() {
     <div className="flex min-h-full flex-col bg-gray-50 dark:bg-gray-900">
       <header className="flex w-full items-center justify-between border-b border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-slate-800">
         <div className="flex items-center gap-2">
-          <Image src={`${basePath}/medication-icon.svg`} alt="まいにち服薬のロゴ" width={28} height={28} className="object-contain" />
+          <Image src={`${basePath}/medicine192.png`} alt="まいにち服薬のロゴ" width={28} height={28} className="object-contain" />
           <span className="text-base font-bold text-slate-800 dark:text-white">まいにち服薬</span>
         </div>
         {installPrompt && (
@@ -241,7 +311,7 @@ export default function Home() {
         <h1 className="text-center text-lg font-black text-slate-800 dark:text-white">{getFormattedDate()}</h1>
         <div className="relative flex h-[190px] items-center justify-center">
           <div className="mr-24 sm:mr-32">
-            <Image key={`${character}-${activeTab}`} src={`${basePath}/${character}_main.webp`} alt={CHARACTER_LABELS[character]} width={175} height={175} className="animate-float-in-soft object-contain drop-shadow-lg" priority />
+            <Image key={`${character}-${characterScene}-${activeTab}`} src={`${basePath}/${characterImage}`} alt={`${CHARACTER_LABELS[character]}：${message.replace("\n", " ")}`} width={175} height={175} className="animate-float-in-soft object-contain drop-shadow-lg" priority />
           </div>
           <div className="pop-speech-bubble select-none">
             <p className="whitespace-pre-line text-center text-sm font-bold leading-relaxed text-sky-600">{message}</p>
@@ -255,7 +325,7 @@ export default function Home() {
               const done = tab !== "as_needed" && isGroupComplete(tab);
               const style = TAB_STYLES[tab];
               return (
-                <button key={tab} type="button" onClick={() => setSelectedTab(tab)} className={`relative flex min-w-0 flex-1 touch-manipulation flex-col items-center justify-center rounded-xl px-1 py-2 transition-all duration-300 ${active ? `${style.active} scale-[1.03] font-bold shadow-md` : "text-slate-600 hover:bg-gray-200 dark:text-slate-400 dark:hover:bg-slate-700"}`}>
+                <button key={tab} type="button" onClick={() => { setSelectedTab(tab); showCharacterScene("main"); }} className={`relative flex min-w-0 flex-1 touch-manipulation flex-col items-center justify-center rounded-xl px-1 py-2 transition-all duration-300 ${active ? `${style.active} scale-[1.03] font-bold shadow-md` : "text-slate-600 hover:bg-gray-200 dark:text-slate-400 dark:hover:bg-slate-700"}`}>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={`${basePath}/${style.icon}`} alt="" className="h-7 w-7 shrink-0 object-contain" />
                   <span className="mt-0.5 truncate text-[10px] sm:text-xs">{TIMING_GROUP_LABELS[tab]}</span>

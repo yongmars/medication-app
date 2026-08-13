@@ -49,8 +49,8 @@ export default function LocalNotificationScheduler() {
       if (!isNotificationSupported() || Notification.permission !== "granted") return;
       const options: NotificationOptions = {
         body: NOTIFICATION_BODY,
-        icon: `${basePath}/medication-icon.svg`,
-        badge: `${basePath}/medication-icon.svg`,
+        icon: `${basePath}/medicine192.png`,
+        badge: `${basePath}/medicine192.png`,
         tag: `medication-${scheduled.appDate}-${scheduled.timing}`,
       };
       if (registrationRef.current?.showNotification) await registrationRef.current.showNotification(NOTIFICATION_TITLE, options);
