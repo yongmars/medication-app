@@ -12,6 +12,7 @@ import {
   OGP_IMAGE_HEIGHT,
   OGP_IMAGE_PATH,
   OGP_IMAGE_WIDTH,
+  SITE_URL,
 } from "../lib/siteMetadata";
 
 const geistSans = Geist({
@@ -33,13 +34,7 @@ export const viewport: Viewport = {
 };
 
 const basePath = process.env.NEXT_PUBLIC_BASE_PATH || "";
-const siteUrl =
-  process.env.NEXT_PUBLIC_SITE_URL ||
-  (process.env.VERCEL_PROJECT_PRODUCTION_URL
-    ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
-    : process.env.VERCEL_URL
-      ? `https://${process.env.VERCEL_URL}`
-      : "http://localhost:3000");
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || SITE_URL;
 const ogpImageUrl = `${basePath}${OGP_IMAGE_PATH}`;
 
 export const metadata: Metadata = {
@@ -47,6 +42,7 @@ export const metadata: Metadata = {
   title: APP_NAME,
   description: APP_DESCRIPTION,
   manifest: `${basePath}/manifest.webmanifest`,
+  alternates: { canonical: "/" },
   icons: {
     icon: [
       { url: `${basePath}/medicine192.png`, sizes: "192x192", type: "image/png" },
