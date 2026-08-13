@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">まいにち服薬</title>
+  <rect width="512" height="512" rx="112" fill="#e0f2fe"/>
+  <circle cx="256" cy="256" r="178" fill="#ffffff"/>
+  <g transform="rotate(-38 256 236)">
+    <rect x="116" y="176" width="280" height="120" rx="60" fill="#ffffff" stroke="#0f4c81" stroke-width="24"/>
+    <path d="M256 176h80a60 60 0 0 1 0 120h-80z" fill="#fb923c"/>
+    <path d="M256 176v120" stroke="#0f4c81" stroke-width="20"/>
+  </g>
+  <g fill="#0f4c81" transform="translate(0 22)">
+    <circle cx="218" cy="350" r="18"/>
+    <circle cx="256" cy="334" r="19"/>
+    <circle cx="294" cy="350" r="18"/>
+    <path d="M256 356c-38 0-58 34-42 57 11 16 30 6 42-4 12 10 31 20 42 4 16-23-4-57-42-57z"/>
+  </g>
+</svg>
