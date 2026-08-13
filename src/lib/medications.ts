@@ -10,6 +10,9 @@ export type MedicationTiming =
 
 export type ScheduledTiming = Exclude<MedicationTiming, "as_needed">;
 
+export type MedicationTimingGroup = "morning" | "lunch" | "dinner" | "bedtime";
+export type HomeTiming = MedicationTimingGroup | "as_needed";
+
 export interface Medication {
   id: number;
   name: string;
@@ -48,6 +51,23 @@ export const SCHEDULED_TIMINGS: ScheduledTiming[] = [
 ];
 
 export const ALL_TIMINGS: MedicationTiming[] = [...SCHEDULED_TIMINGS, "as_needed"];
+
+export const SCHEDULED_TIMING_GROUPS: MedicationTimingGroup[] = ["morning", "lunch", "dinner", "bedtime"];
+
+export const GROUP_TIMINGS: Record<MedicationTimingGroup, ScheduledTiming[]> = {
+  morning: ["breakfast_before", "breakfast_after"],
+  lunch: ["lunch_before", "lunch_after"],
+  dinner: ["dinner_before", "dinner_after"],
+  bedtime: ["bedtime"],
+};
+
+export const TIMING_GROUP_LABELS: Record<HomeTiming, string> = {
+  morning: "朝",
+  lunch: "昼",
+  dinner: "夕",
+  bedtime: "就寝前",
+  as_needed: "頓服",
+};
 
 export const TIMING_LABELS: Record<MedicationTiming, string> = {
   breakfast_before: "朝食前",
@@ -91,6 +111,13 @@ export const getSuggestedTiming = (date: Date = new Date()): ScheduledTiming => 
   return "bedtime";
 };
 
+export const getTimingGroup = (timing: ScheduledTiming): MedicationTimingGroup => {
+  if (timing === "breakfast_before" || timing === "breakfast_after") return "morning";
+  if (timing === "lunch_before" || timing === "lunch_after") return "lunch";
+  if (timing === "dinner_before" || timing === "dinner_after") return "dinner";
+  return "bedtime";
+};
+
 export const readMedications = (): Medication[] => {
   if (typeof window === "undefined") return [];
   const raw = localStorage.getItem(MEDICATIONS_STORAGE_KEY);
@@ -107,4 +134,3 @@ export const saveMedications = (medications: Medication[]) => {
   localStorage.setItem(MEDICATIONS_STORAGE_KEY, JSON.stringify(medications));
   window.dispatchEvent(new Event(MEDICATION_DATA_CHANGED_EVENT));
 };
-

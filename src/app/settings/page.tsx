@@ -43,6 +43,8 @@ export default function SettingsPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [notifications, setNotifications] = useState<LocalNotificationSettings | null>(null);
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | "unsupported">("default");
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [isNotificationOpen, setIsNotificationOpen] = useState(false);
   const cameraInput = useRef<HTMLInputElement>(null);
   const galleryInput = useRef<HTMLInputElement>(null);
 
@@ -125,6 +127,7 @@ export default function SettingsPage() {
       setMedications(next);
       setMessage(editingId === null ? "お薬を登録しました。" : "お薬の情報を更新しました。");
       resetForm();
+      setIsFormOpen(false);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "保存に失敗しました。");
     } finally {
@@ -134,13 +137,16 @@ export default function SettingsPage() {
 
   const startEdit = async (medication: Medication) => {
     resetForm();
+    setIsFormOpen(true);
     setEditingId(medication.id);
     setForm({ name: medication.name, memo: medication.memo || "", timings: medication.timings });
     try {
       const photo = await getMedicationPhoto(medication.id);
       if (photo) setPhotoPreview(URL.createObjectURL(photo.blob));
     } catch { /* 写真なしでも編集を続けます */ }
-    document.getElementById("medication-form")?.scrollIntoView({ behavior: "smooth" });
+    window.requestAnimationFrame(() => {
+      document.getElementById("medication-form")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
   };
 
   const deleteMedication = async (medication: Medication) => {
@@ -178,7 +184,7 @@ export default function SettingsPage() {
   return (
     <div className="min-h-full bg-slate-50 dark:bg-slate-900 px-4 py-5">
       <main className="max-w-lg mx-auto space-y-5">
-        <header><p className="text-xs font-bold text-sky-600">まいにち服薬</p><h1 className="text-2xl font-black text-slate-800 dark:text-white">お薬と設定</h1></header>
+        <header className="text-center"><p className="text-xs font-bold text-sky-600">まいにち服薬</p><h1 className="text-2xl font-black text-slate-800 dark:text-white">お薬と設定</h1></header>
         {message && <button onClick={() => setMessage(null)} className="w-full rounded-2xl bg-sky-50 dark:bg-sky-950/30 border border-sky-200 dark:border-sky-900 p-3 text-sm font-bold text-sky-700 dark:text-sky-300">{message}　×</button>}
 
         <section className="rounded-3xl bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 p-4 shadow-sm">
@@ -195,20 +201,32 @@ export default function SettingsPage() {
           </div>
         </section>
 
-        <section id="medication-form" className="rounded-3xl bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 p-4 shadow-sm space-y-4">
-          <div className="flex justify-between items-center"><h2 className="text-lg font-black text-slate-800 dark:text-white">{editingId === null ? "＋ お薬を登録する" : "お薬を編集する"}</h2>{editingId !== null && <button onClick={resetForm} className="text-xs font-bold text-slate-500">編集をやめる</button>}</div>
+        <section id="medication-form" className="scroll-mt-4 overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800">
+          <button type="button" onClick={() => setIsFormOpen((open) => !open)} className="flex w-full items-center justify-between px-5 py-5 text-left font-bold text-slate-800 transition-colors hover:bg-slate-50 dark:text-white dark:hover:bg-slate-700/30" aria-expanded={isFormOpen}>
+            <span className="text-base">{editingId === null ? "＋ お薬を登録する" : "✏️ お薬を編集する"}</span>
+            <span className="text-sm text-slate-400">{isFormOpen ? "▲ 閉じる" : "▼ 開く"}</span>
+          </button>
+          {isFormOpen && <div className="space-y-4 border-t border-slate-100 px-4 pb-4 pt-4 dark:border-slate-700">
+          {editingId !== null && <div className="flex justify-end"><button type="button" onClick={() => { resetForm(); setIsFormOpen(false); }} className="text-xs font-bold text-slate-500">編集をやめる</button></div>}
           <label className="block"><span className="text-sm font-bold text-slate-700 dark:text-slate-200">お薬の名前</span><input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} maxLength={80} placeholder="例：〇〇錠" className="mt-1 w-full rounded-2xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-4 py-3 text-base" /></label>
           <div><p className="text-sm font-bold text-slate-700 dark:text-slate-200">服用タイミング（複数選択可）</p><div className="mt-2 grid grid-cols-2 gap-2">{ALL_TIMINGS.map((timing) => <button type="button" key={timing} onClick={() => toggleTiming(timing)} className={`rounded-xl border px-3 py-2.5 text-sm font-bold ${form.timings.includes(timing) ? "bg-sky-600 border-sky-600 text-white" : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300"}`}>{TIMING_LABELS[timing]}</button>)}</div></div>
           <label className="block"><span className="text-sm font-bold text-slate-700 dark:text-slate-200">服用メモ（任意）</span><textarea value={form.memo} onChange={(event) => setForm({ ...form, memo: event.target.value })} maxLength={200} rows={3} placeholder="例：1回1錠。処方された内容をそのまま入力してください。" className="mt-1 w-full resize-none rounded-2xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-4 py-3 text-sm" /></label>
           <div><p className="text-sm font-bold text-slate-700 dark:text-slate-200">お薬の写真（任意・1枚）</p><p className="mt-1 text-xs text-slate-500">写真はこの端末内だけに保存されます。</p><input ref={cameraInput} type="file" accept="image/*" capture="environment" onChange={(event) => void handlePhoto(event)} className="hidden" /><input ref={galleryInput} type="file" accept="image/*" onChange={(event) => void handlePhoto(event)} className="hidden" /><div className="mt-2 grid grid-cols-2 gap-2"><button onClick={() => cameraInput.current?.click()} className="rounded-xl bg-sky-50 dark:bg-slate-700 py-3 text-sm font-bold text-sky-700 dark:text-sky-300">カメラで撮る</button><button onClick={() => galleryInput.current?.click()} className="rounded-xl bg-slate-100 dark:bg-slate-700 py-3 text-sm font-bold text-slate-700 dark:text-slate-200">画像を選ぶ</button></div>{photoPreview && <div className="mt-3"><div className="h-40 overflow-hidden rounded-2xl bg-slate-100"><img src={photoPreview} alt="登録するお薬の写真" className="h-full w-full object-contain" /></div><button onClick={() => { setPhotoBlob(null); setRemovePhoto(true); setPhotoPreview(null); }} className="mt-2 w-full rounded-xl bg-red-50 py-2 text-sm font-bold text-red-600">写真を削除する</button></div>}</div>
           <button onClick={() => void saveMedication()} disabled={saving} className="w-full rounded-2xl bg-sky-600 py-4 text-base font-black text-white disabled:opacity-50">{saving ? "保存中…" : editingId === null ? "お薬を登録する" : "変更を保存する"}</button>
+          </div>}
         </section>
 
-        <section className="rounded-3xl bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 p-4 shadow-sm">
-          <div className="flex items-center justify-between gap-3"><div><h2 className="text-lg font-black text-slate-800 dark:text-white">服薬のお知らせ</h2><p className="text-xs text-slate-500 mt-1">登録薬がある時間帯だけ通知します。</p></div><button onClick={() => updateNotifications({ ...notifications, enabled: !notifications.enabled })} className={`rounded-full px-3 py-2 text-xs font-bold ${notifications.enabled ? "bg-emerald-600 text-white" : "bg-slate-200 text-slate-600"}`}>{notifications.enabled ? "オン" : "オフ"}</button></div>
+        <section className="overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800">
+          <button type="button" onClick={() => setIsNotificationOpen((open) => !open)} className="flex w-full items-center justify-between px-5 py-5 text-left font-bold text-slate-800 transition-colors hover:bg-slate-50 dark:text-white dark:hover:bg-slate-700/30" aria-expanded={isNotificationOpen}>
+            <span><span className="block text-base">服薬のお知らせ</span><span className="mt-1 block text-xs font-normal text-slate-500">登録薬がある時間帯だけ通知します。</span></span>
+            <span className="flex items-center gap-2"><span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${notifications.enabled ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-600"}`}>{notifications.enabled ? "オン" : "オフ"}</span><span className="text-sm text-slate-400">{isNotificationOpen ? "▲ 閉じる" : "▼ 開く"}</span></span>
+          </button>
+          {isNotificationOpen && <div className="border-t border-slate-100 px-4 pb-4 pt-4 dark:border-slate-700">
+          <div className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50 p-3 dark:bg-slate-700"><span className="text-sm font-bold text-slate-700 dark:text-slate-200">通知機能</span><button type="button" onClick={() => updateNotifications({ ...notifications, enabled: !notifications.enabled })} className={`rounded-full px-3 py-2 text-xs font-bold ${notifications.enabled ? "bg-emerald-600 text-white" : "bg-slate-200 text-slate-600"}`}>{notifications.enabled ? "オン" : "オフ"}</button></div>
           {notificationPermission !== "granted" && <button onClick={() => void requestPermission()} disabled={notificationPermission === "unsupported" || notificationPermission === "denied"} className="mt-3 w-full rounded-xl bg-amber-100 dark:bg-amber-950/30 py-2.5 text-sm font-bold text-amber-800 dark:text-amber-300 disabled:opacity-60">{notificationPermission === "unsupported" ? "このブラウザは通知に対応していません" : notificationPermission === "denied" ? "通知がブラウザで拒否されています" : "通知を許可する"}</button>}
           <div className="mt-4 space-y-2">{SCHEDULED_TIMINGS.map((timing) => <div key={timing} className="flex items-center gap-2 rounded-xl bg-slate-50 dark:bg-slate-700 p-2"><label className="flex min-w-0 flex-1 items-center gap-2 text-sm font-bold text-slate-700 dark:text-slate-200"><input type="checkbox" checked={notifications.slots[timing].enabled} onChange={(event) => updateNotifications({ ...notifications, slots: { ...notifications.slots, [timing]: { ...notifications.slots[timing], enabled: event.target.checked } } })} />{TIMING_LABELS[timing]}</label><input type="time" value={notifications.slots[timing].time} onChange={(event) => updateNotifications({ ...notifications, slots: { ...notifications.slots, [timing]: { ...notifications.slots[timing], time: event.target.value } } })} className="rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm" /></div>)}</div>
           <p className="mt-3 text-xs leading-relaxed text-slate-500">時刻は例です。処方の指示に合わせて変更してください。端末やブラウザの状態によって、アプリを完全に閉じている間は通知されない場合があります。</p>
+          </div>}
         </section>
 
         <section className="rounded-3xl bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900 p-4 text-xs leading-relaxed text-amber-900 dark:text-amber-300 space-y-2"><h2 className="text-sm font-black">大切なお知らせ</h2><p>本アプリは服薬の記録を支援する補助ツールで、医療機器ではありません。</p><p>アプリ内の表示より、医師・薬剤師の指示、お薬の説明書を必ず優先してください。</p><p>写真やメモは、お薬手帳・処方箋の代わりにはなりません。</p></section>
