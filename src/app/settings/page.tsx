@@ -3,6 +3,7 @@
 /* eslint-disable @next/next/no-img-element */
 
 import { ChangeEvent, useEffect, useRef, useState } from "react";
+import Image from "next/image";
 import {
   clearMedicationPhotos,
   compressMedicationPhoto,
@@ -79,6 +80,7 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
 }
 
 export default function SettingsPage() {
+  const basePath = process.env.NEXT_PUBLIC_BASE_PATH || "";
   const [mounted, setMounted] = useState(false);
   const [medications, setMedications] = useState<Medication[]>([]);
   const [form, setForm] = useState<MedicationForm>(createEmptyForm);
@@ -258,9 +260,10 @@ export default function SettingsPage() {
   if (!mounted || !notifications) return <div className="min-h-full grid place-items-center text-slate-500 font-bold">読み込み中...</div>;
 
   return (
-    <div className="min-h-full bg-slate-50 px-4 py-5 dark:bg-slate-900">
-      <main className="mx-auto max-w-lg space-y-5">
-        <header className="text-center"><p className="text-xs font-bold text-sky-600">まいにち服薬</p><h1 className="text-2xl font-black text-slate-800 dark:text-white">お薬と設定</h1></header>
+    <div className="min-h-full bg-slate-50 dark:bg-slate-900">
+      <header className="flex w-full items-center border-b border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-slate-800"><div className="flex items-center gap-2"><Image src={`${basePath}/medicine192.png`} alt="まいにち内服のロゴ" width={28} height={28} className="object-contain" /><span className="text-base font-bold text-slate-800 dark:text-white">まいにち内服</span></div></header>
+      <main className="mx-auto max-w-lg space-y-5 px-4 py-5">
+        <header className="text-center"><h1 className="text-2xl font-black text-slate-800 dark:text-white">お薬と設定</h1></header>
         {message && <button onClick={() => setMessage(null)} className="w-full rounded-2xl border border-sky-200 bg-sky-50 p-3 text-sm font-bold text-sky-700 dark:border-sky-900 dark:bg-sky-950/30 dark:text-sky-300">{message}　×</button>}
 
         <section className="rounded-3xl border border-slate-100 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
@@ -309,7 +312,7 @@ export default function SettingsPage() {
         </section>
 
         <div className="border-t border-slate-200 pt-5 dark:border-slate-700">
-          <button type="button" onClick={() => setModal("updates")} className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-4 text-left shadow-sm dark:border-slate-700 dark:bg-slate-800"><span className="font-black text-slate-700 dark:text-white">🆙 アップデート情報</span><span className="text-sm font-bold text-slate-400">準備中</span></button>
+          <button type="button" onClick={() => setModal("updates")} className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-4 text-left shadow-sm dark:border-slate-700 dark:bg-slate-800"><span className="font-black text-slate-700 dark:text-white">🆙 アップデート情報</span><span className="text-sm font-bold text-slate-400">Ver. 1.0.0</span></button>
           <button type="button" onClick={() => setModal("license")} className="mt-3 flex w-full items-center rounded-2xl border border-slate-200 bg-white px-4 py-4 text-left font-black text-slate-700 shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">📄 ライセンス情報</button>
           <p className="mt-6 text-center text-sm font-bold text-slate-500">作った人： <a href="https://note.com/note_yongmars" target="_blank" rel="noreferrer" className="text-sky-600 underline underline-offset-4">視能訓練士 ゆうまるす ↗</a></p>
         </div>
@@ -322,7 +325,7 @@ export default function SettingsPage() {
         <div className="pb-4"><p className="mb-3 text-center text-xs text-slate-400">※初期化すると、すべての登録データが完全に消去され、元に戻せません。</p><button type="button" onClick={() => void resetAllData()} className="w-full rounded-2xl border-2 border-red-300 bg-transparent py-4 text-sm font-black text-red-600">🗑️ ⚠ アプリの全データを初期化する</button></div>
       </main>
 
-      {modal === "updates" && <Modal title="アップデート情報" onClose={() => setModal(null)}><p className="rounded-2xl bg-slate-50 p-4 text-center font-bold dark:bg-slate-700">アップデート履歴は今後掲載します。</p></Modal>}
+      {modal === "updates" && <Modal title="アップデート情報" onClose={() => setModal(null)}><article><h3 className="text-base font-black text-slate-800 dark:text-white">■ Ver. 1.0.0（2026年8月）</h3><ul className="mt-3 space-y-2 pl-1"><li>・『ノクトのまいにち内服管理アプリ』が誕生！</li><li>・毎日の内服チェックに対応。</li><li>・同じ時間帯に複数の薬を服用する場合もまとめて管理できます。</li><li>・錠剤・カプセルは、同じ服用タイミングなら1回のチェックでまとめて記録できます。</li></ul></article></Modal>}
       {modal === "license" && <Modal title="ライセンス・著作権について" onClose={() => setModal(null)}><p className="font-black text-slate-800 dark:text-white">© 2026 ゆうまるす / yongmars. All rights reserved.</p><p className="mt-4">本アプリに登場するキャラクター「ノクト」「ルクス」「朔」、その他のイラスト、アプリアイコン等は、すべて製作者「ゆうまるす」のオリジナル著作物です。画像の無断転載・複製・商用利用は固くお断りいたします。</p></Modal>}
     </div>
   );

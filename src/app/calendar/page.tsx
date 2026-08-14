@@ -76,9 +76,10 @@ export default function CalendarPage() {
   if (!mounted) return <div className="min-h-full grid place-items-center text-slate-500 font-bold">読み込み中...</div>;
 
   return (
-    <div className="min-h-full bg-slate-50 px-2 py-5 dark:bg-slate-900 sm:px-4">
-      <main className="mx-auto max-w-lg space-y-4">
-        <header className="px-2 text-center"><p className="text-xs font-bold text-sky-600">まいにち服薬</p><h1 className="text-2xl font-black text-slate-800 dark:text-white">服薬履歴</h1></header>
+    <div className="min-h-full bg-slate-50 dark:bg-slate-900">
+      <header className="flex w-full items-center border-b border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-slate-800"><div className="flex items-center gap-2"><Image src={`${basePath}/medicine192.png`} alt="まいにち内服のロゴ" width={28} height={28} className="object-contain" /><span className="text-base font-bold text-slate-800 dark:text-white">まいにち内服</span></div></header>
+      <main className="mx-auto max-w-lg space-y-4 px-2 py-5 sm:px-4">
+        <header className="px-2 text-center"><h1 className="text-2xl font-black text-slate-800 dark:text-white">内服履歴カレンダー</h1></header>
         <section className="rounded-3xl border border-slate-100 bg-white p-3 shadow-sm dark:border-slate-700 dark:bg-slate-800 sm:p-4">
           <div className="mb-4 flex items-center justify-between"><button type="button" onClick={() => setMonthDate(new Date(year, month - 1, 1))} aria-label="前の月" className="h-10 w-10 rounded-xl bg-slate-100 font-bold dark:bg-slate-700">‹</button><h2 className="text-lg font-black text-slate-800 dark:text-white">{year}年 {month + 1}月</h2><button type="button" onClick={() => setMonthDate(new Date(year, month + 1, 1))} aria-label="次の月" className="h-10 w-10 rounded-xl bg-slate-100 font-bold dark:bg-slate-700">›</button></div>
           <div className="mb-1 grid grid-cols-7 gap-0.5 text-center text-xs font-bold text-slate-400 sm:gap-1">{["日", "月", "火", "水", "木", "金", "土"].map((day) => <div key={day} className="py-1">{day}</div>)}</div>

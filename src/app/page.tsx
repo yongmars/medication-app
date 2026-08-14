@@ -249,7 +249,7 @@ export default function Home() {
 
   return (
     <div className="flex min-h-full flex-col bg-gray-50 dark:bg-gray-900">
-      <header className="flex w-full items-center justify-between border-b border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-slate-800"><div className="flex items-center gap-2"><Image src={`${basePath}/medicine192.png`} alt="まいにち服薬のロゴ" width={28} height={28} className="object-contain" /><span className="text-base font-bold text-slate-800 dark:text-white">まいにち服薬</span></div>{installPrompt && <button type="button" onClick={async () => { await installPrompt.prompt(); setInstallPrompt(null); }} className="min-h-8 rounded-xl bg-sky-600 px-3 py-1.5 text-xs font-bold text-white animate-pulse">📲 インストール</button>}</header>
+      <header className="flex w-full items-center justify-between border-b border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-slate-800"><div className="flex items-center gap-2"><Image src={`${basePath}/medicine192.png`} alt="まいにち内服のロゴ" width={28} height={28} className="object-contain" /><span className="text-base font-bold text-slate-800 dark:text-white">まいにち内服</span></div>{installPrompt && <button type="button" onClick={async () => { await installPrompt.prompt(); setInstallPrompt(null); }} className="min-h-8 rounded-xl bg-sky-600 px-3 py-1.5 text-xs font-bold text-white animate-pulse">📲 インストール</button>}</header>
 
       <section className="sticky top-0 z-20 flex-shrink-0 border-b border-gray-200 bg-gray-50/95 px-4 pb-4 pt-4 shadow-sm backdrop-blur-sm dark:border-gray-800 dark:bg-gray-900/95">
         <h1 className="text-center text-lg font-black text-slate-800 dark:text-white">{getFormattedDate()}</h1>
