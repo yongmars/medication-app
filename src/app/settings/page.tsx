@@ -49,6 +49,7 @@ interface MedicationForm {
   timings: MedicationTiming[];
   scheduleType: MedicationScheduleType;
   weekdays: Weekday[];
+  separateCheck: boolean;
   memo: string;
 }
 
@@ -61,6 +62,7 @@ const createEmptyForm = (): MedicationForm => ({
   timings: [],
   scheduleType: "daily",
   weekdays: [],
+  separateCheck: false,
   memo: "",
 });
 
@@ -192,7 +194,7 @@ export default function SettingsPage() {
       timings: ALL_TIMINGS.filter((timing) => form.timings.includes(timing)),
       scheduleType: form.scheduleType,
       weekdays: form.scheduleType === "weekdays" ? form.weekdays : [],
-      separateCheck: medications.find((item) => item.id === id)?.separateCheck ?? false,
+      separateCheck: form.separateCheck,
       memo: form.memo.trim() || undefined,
     };
     const next = editingId === null ? [...medications, medication] : medications.map((item) => item.id === editingId ? medication : item);
@@ -225,6 +227,7 @@ export default function SettingsPage() {
       timings: medication.timings,
       scheduleType: medication.scheduleType,
       weekdays: medication.weekdays,
+      separateCheck: medication.separateCheck,
       memo: medication.memo || "",
     });
     try {
@@ -273,6 +276,7 @@ export default function SettingsPage() {
               <article key={medication.id} className="rounded-2xl border border-slate-200 p-3 dark:border-slate-600">
                 <div className="flex items-start justify-between gap-2"><h3 className="break-words font-black text-slate-800 dark:text-white">{medication.name}</h3><span className="shrink-0 rounded-full bg-emerald-50 px-2 py-1 text-xs font-black text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">1回 {getMedicationDoseLabel(medication)}</span></div>
                 <div className="mt-2 flex flex-wrap gap-1">{medication.timings.map((timing) => <span key={timing} className="rounded-full bg-sky-50 px-2 py-1 text-[11px] font-bold text-sky-700 dark:bg-slate-700 dark:text-sky-300">{TIMING_LABELS[timing]}</span>)}</div>
+                {medication.separateCheck && <span className="mt-2 inline-flex rounded-full bg-purple-50 px-2 py-1 text-[11px] font-bold text-purple-700 dark:bg-purple-950/30 dark:text-purple-300">別に飲む</span>}
                 <p className="mt-2 text-xs font-bold text-slate-500 dark:text-slate-400">{medication.scheduleType === "daily" ? "毎日" : medication.weekdays.map((day) => `${WEEKDAY_LABELS[day]}曜`).join("・")}</p>
                 {medication.memo && <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">{medication.memo}</p>}
                 <div className="mt-3 flex gap-2"><button onClick={() => void startEdit(medication)} className="flex-1 rounded-xl bg-slate-100 py-2 text-sm font-bold text-slate-700 dark:bg-slate-700 dark:text-white">編集する</button><button onClick={() => void deleteMedication(medication)} className="rounded-xl bg-red-50 px-4 py-2 text-sm font-bold text-red-600 dark:bg-red-950/30">削除</button></div>
@@ -292,6 +296,8 @@ export default function SettingsPage() {
             <div><label className="text-sm font-bold text-slate-700 dark:text-slate-200" htmlFor="dose">1回量</label><select id="dose" value={form.doseChoice} onChange={(event) => setForm({ ...form, doseChoice: event.target.value })} className="mt-1 w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-base dark:border-slate-600 dark:bg-slate-900">{DOSE_OPTIONS.map((dose) => <option key={dose} value={dose}>{dose}</option>)}<option value="other">その他（自由入力）</option></select>{form.doseChoice === "other" && <input inputMode="decimal" type="number" min="0.01" step="any" value={form.customDose} onChange={(event) => setForm({ ...form, customDose: event.target.value })} placeholder="0より大きい数値" className="mt-2 w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-base dark:border-slate-600 dark:bg-slate-900" />}</div>
 
             <div><p className="text-sm font-bold text-slate-700 dark:text-slate-200">単位</p><div className="mt-2 grid grid-cols-3 gap-2">{UNIT_OPTIONS.map((unit) => <button type="button" key={unit} onClick={() => setForm({ ...form, unit })} className={`rounded-xl border px-2 py-2.5 text-sm font-bold ${form.unit === unit ? "border-sky-600 bg-sky-600 text-white" : "border-slate-200 bg-white text-slate-600 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-300"}`}>{UNIT_LABELS[unit]}</button>)}</div>{form.unit === "other" && <input value={form.customUnit} onChange={(event) => setForm({ ...form, customUnit: event.target.value })} maxLength={20} placeholder="単位名（例：本、滴）" className="mt-2 w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-base dark:border-slate-600 dark:bg-slate-900" />}</div>
+
+            <fieldset><legend className="text-sm font-bold text-slate-700 dark:text-slate-200">他の薬とのまとめ方</legend><div className="mt-2 space-y-2"><label className={`flex cursor-pointer items-start gap-3 rounded-2xl border p-3 ${!form.separateCheck ? "border-sky-500 bg-sky-50 dark:bg-sky-950/30" : "border-slate-200 bg-white dark:border-slate-600 dark:bg-slate-900"}`}><input type="radio" name="separate-check" checked={!form.separateCheck} onChange={() => setForm({ ...form, separateCheck: false })} className="mt-1" /><span><span className="block text-sm font-black text-slate-700 dark:text-slate-200">通常</span><span className="mt-0.5 block text-xs leading-relaxed text-slate-500 dark:text-slate-400">同じタイミングの錠剤・カプセルとまとめる</span></span></label><label className={`flex cursor-pointer items-start gap-3 rounded-2xl border p-3 ${form.separateCheck ? "border-purple-500 bg-purple-50 dark:bg-purple-950/30" : "border-slate-200 bg-white dark:border-slate-600 dark:bg-slate-900"}`}><input type="radio" name="separate-check" checked={form.separateCheck} onChange={() => setForm({ ...form, separateCheck: true })} className="mt-1" /><span><span className="block text-sm font-black text-slate-700 dark:text-slate-200">この薬は別に飲む</span><span className="mt-0.5 block text-xs leading-relaxed text-slate-500 dark:text-slate-400">まとめ飲みには含めず、この薬だけで記録します。</span></span></label></div><p className="mt-2 text-xs leading-relaxed text-slate-500">服用方法をアプリが判断する設定ではありません。医師・薬剤師の指示に合わせて選択してください。</p></fieldset>
 
             <div><p className="text-sm font-bold text-slate-700 dark:text-slate-200">服用タイミング（複数選択可）</p><p className="mt-1 text-xs text-slate-500">頓服を選ぶと、ほかのタイミングは解除されます。</p><div className="mt-2 grid grid-cols-2 gap-2">{ALL_TIMINGS.map((timing) => <button type="button" key={timing} onClick={() => toggleTiming(timing)} className={`rounded-xl border px-3 py-2.5 text-sm font-bold ${form.timings.includes(timing) ? "border-sky-600 bg-sky-600 text-white" : "border-slate-200 bg-white text-slate-600 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-300"}`}>{TIMING_LABELS[timing]}</button>)}</div></div>
 
