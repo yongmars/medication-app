@@ -15,12 +15,19 @@ import {
   DAILY_RECORDS_STORAGE_KEY,
   DailyMedicationRecords,
   getAppDateString,
+  getMedicationDoseLabel,
+  isMedicationScheduledForAppDate,
   Medication,
+  MedicationScheduleType,
   MedicationTiming,
+  MedicationUnit,
   readMedications,
   saveMedications,
   SCHEDULED_TIMINGS,
   TIMING_LABELS,
+  UNIT_LABELS,
+  Weekday,
+  WEEKDAY_LABELS,
 } from "../../lib/medications";
 import {
   isNotificationSupported,
@@ -29,12 +36,52 @@ import {
   saveNotificationSettings,
 } from "../../lib/localNotifications";
 
-const emptyForm = { name: "", memo: "", timings: [] as MedicationTiming[] };
+const DOSE_OPTIONS = ["0.25", "0.5", "1", "1.5", "2", "3", "4", "5", "6", "7", "8", "9", "10"];
+const UNIT_OPTIONS: MedicationUnit[] = ["tablet", "capsule", "packet", "ml", "other"];
+
+interface MedicationForm {
+  name: string;
+  doseChoice: string;
+  customDose: string;
+  unit: MedicationUnit;
+  customUnit: string;
+  timings: MedicationTiming[];
+  scheduleType: MedicationScheduleType;
+  weekdays: Weekday[];
+  memo: string;
+}
+
+const createEmptyForm = (): MedicationForm => ({
+  name: "",
+  doseChoice: "1",
+  customDose: "",
+  unit: "tablet",
+  customUnit: "",
+  timings: [],
+  scheduleType: "daily",
+  weekdays: [],
+  memo: "",
+});
+
+function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 animate-fade-in" role="dialog" aria-modal="true" aria-label={title} onClick={onClose}>
+      <section className="flex max-h-[82vh] w-full max-w-lg flex-col overflow-hidden rounded-[28px] bg-white shadow-2xl animate-scale-up dark:bg-slate-800" onClick={(event) => event.stopPropagation()}>
+        <header className="flex items-center justify-between border-b border-slate-100 p-5 dark:border-slate-700">
+          <h2 className="text-xl font-black text-slate-800 dark:text-white">{title}</h2>
+          <button type="button" onClick={onClose} aria-label="閉じる" className="grid h-11 w-11 place-items-center rounded-full bg-slate-100 text-2xl text-slate-500 dark:bg-slate-700 dark:text-slate-200">×</button>
+        </header>
+        <div className="custom-scrollbar overflow-y-auto p-5 text-sm leading-relaxed text-slate-600 dark:text-slate-300">{children}</div>
+        <footer className="border-t border-slate-100 p-4 dark:border-slate-700"><button type="button" onClick={onClose} className="w-full rounded-2xl bg-sky-600 py-3.5 text-base font-black text-white">閉じる</button></footer>
+      </section>
+    </div>
+  );
+}
 
 export default function SettingsPage() {
   const [mounted, setMounted] = useState(false);
   const [medications, setMedications] = useState<Medication[]>([]);
-  const [form, setForm] = useState(emptyForm);
+  const [form, setForm] = useState<MedicationForm>(createEmptyForm);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [photoBlob, setPhotoBlob] = useState<Blob | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
@@ -45,6 +92,7 @@ export default function SettingsPage() {
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | "unsupported">("default");
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
+  const [modal, setModal] = useState<"updates" | "license" | null>(null);
   const cameraInput = useRef<HTMLInputElement>(null);
   const galleryInput = useRef<HTMLInputElement>(null);
 
@@ -61,7 +109,7 @@ export default function SettingsPage() {
   useEffect(() => () => { if (photoPreview) URL.revokeObjectURL(photoPreview); }, [photoPreview]);
 
   const resetForm = () => {
-    setForm(emptyForm);
+    setForm(createEmptyForm());
     setEditingId(null);
     setPhotoBlob(null);
     setRemovePhoto(false);
@@ -80,7 +128,9 @@ export default function SettingsPage() {
         SCHEDULED_TIMINGS.forEach((timing) => {
           const record = todayRecord[timing];
           if (!record) return;
-          const requiredIds = next.filter((medication) => medication.timings.includes(timing)).map((medication) => medication.id);
+          const requiredIds = next
+            .filter((medication) => medication.timings.includes(timing) && isMedicationScheduledForAppDate(medication, appDate))
+            .map((medication) => medication.id);
           record.completed = requiredIds.length > 0 && requiredIds.every((id) => record.checkedMedicationIds.includes(id));
         });
         localStorage.setItem(DAILY_RECORDS_STORAGE_KEY, JSON.stringify(records));
@@ -104,22 +154,46 @@ export default function SettingsPage() {
   };
 
   const toggleTiming = (timing: MedicationTiming) => {
+    setForm((current) => {
+      if (timing === "as_needed") return { ...current, timings: current.timings.includes("as_needed") ? [] : ["as_needed"] };
+      const withoutAsNeeded = current.timings.filter((value) => value !== "as_needed");
+      return {
+        ...current,
+        timings: withoutAsNeeded.includes(timing) ? withoutAsNeeded.filter((value) => value !== timing) : [...withoutAsNeeded, timing],
+      };
+    });
+  };
+
+  const toggleWeekday = (weekday: Weekday) => {
     setForm((current) => ({
       ...current,
-      timings: current.timings.includes(timing) ? current.timings.filter((value) => value !== timing) : [...current.timings, timing],
+      weekdays: current.weekdays.includes(weekday) ? current.weekdays.filter((day) => day !== weekday) : [...current.weekdays, weekday].sort(),
     }));
   };
 
   const saveMedication = async () => {
     const name = form.name.trim();
+    const dose = Number(form.doseChoice === "other" ? form.customDose : form.doseChoice);
     if (!name) return setMessage("お薬の名前を入力してください。");
+    if (!Number.isFinite(dose) || dose <= 0) return setMessage("1回量は0より大きい数値を入力してください。");
+    if (form.unit === "other" && !form.customUnit.trim()) return setMessage("その他の単位名を入力してください。");
     if (form.timings.length === 0) return setMessage("服用タイミングを1つ以上選んでください。");
+    if (form.scheduleType === "weekdays" && form.weekdays.length === 0) return setMessage("服用する曜日を1つ以上選んでください。");
     setSaving(true);
     const id = editingId ?? Math.max(0, ...medications.map((medication) => medication.id)) + 1;
-    const medication: Medication = { id, name, timings: ALL_TIMINGS.filter((timing) => form.timings.includes(timing)), memo: form.memo.trim() || undefined };
-    const next = editingId === null
-      ? [...medications, medication]
-      : medications.map((item) => item.id === editingId ? medication : item);
+    const medication: Medication = {
+      id,
+      name,
+      dose,
+      unit: form.unit,
+      customUnit: form.unit === "other" ? form.customUnit.trim() : undefined,
+      timings: ALL_TIMINGS.filter((timing) => form.timings.includes(timing)),
+      scheduleType: form.scheduleType,
+      weekdays: form.scheduleType === "weekdays" ? form.weekdays : [],
+      separateCheck: medications.find((item) => item.id === id)?.separateCheck ?? false,
+      memo: form.memo.trim() || undefined,
+    };
+    const next = editingId === null ? [...medications, medication] : medications.map((item) => item.id === editingId ? medication : item);
     try {
       if (removePhoto) await deleteMedicationPhoto(id);
       if (photoBlob) await saveMedicationPhoto(id, photoBlob);
@@ -139,14 +213,23 @@ export default function SettingsPage() {
     resetForm();
     setIsFormOpen(true);
     setEditingId(medication.id);
-    setForm({ name: medication.name, memo: medication.memo || "", timings: medication.timings });
+    const doseString = String(medication.dose);
+    setForm({
+      name: medication.name,
+      doseChoice: DOSE_OPTIONS.includes(doseString) ? doseString : "other",
+      customDose: DOSE_OPTIONS.includes(doseString) ? "" : doseString,
+      unit: medication.unit,
+      customUnit: medication.customUnit || "",
+      timings: medication.timings,
+      scheduleType: medication.scheduleType,
+      weekdays: medication.weekdays,
+      memo: medication.memo || "",
+    });
     try {
       const photo = await getMedicationPhoto(medication.id);
       if (photo) setPhotoPreview(URL.createObjectURL(photo.blob));
     } catch { /* 写真なしでも編集を続けます */ }
-    window.requestAnimationFrame(() => {
-      document.getElementById("medication-form")?.scrollIntoView({ behavior: "smooth", block: "start" });
-    });
+    window.requestAnimationFrame(() => document.getElementById("medication-form")?.scrollIntoView({ behavior: "smooth", block: "start" }));
   };
 
   const deleteMedication = async (medication: Medication) => {
@@ -159,15 +242,8 @@ export default function SettingsPage() {
     setMessage("お薬を削除しました。");
   };
 
-  const updateNotifications = (next: LocalNotificationSettings) => {
-    setNotifications(next);
-    saveNotificationSettings(next);
-  };
-
-  const requestPermission = async () => {
-    if (!isNotificationSupported()) return;
-    setNotificationPermission(await Notification.requestPermission());
-  };
+  const updateNotifications = (next: LocalNotificationSettings) => { setNotifications(next); saveNotificationSettings(next); };
+  const requestPermission = async () => { if (isNotificationSupported()) setNotificationPermission(await Notification.requestPermission()); };
 
   const resetAllData = async () => {
     if (!confirm("登録したお薬、服薬履歴、頓服記録、通知設定、写真をすべて削除します。元に戻せません。続けますか？")) return;
@@ -182,56 +258,72 @@ export default function SettingsPage() {
   if (!mounted || !notifications) return <div className="min-h-full grid place-items-center text-slate-500 font-bold">読み込み中...</div>;
 
   return (
-    <div className="min-h-full bg-slate-50 dark:bg-slate-900 px-4 py-5">
-      <main className="max-w-lg mx-auto space-y-5">
+    <div className="min-h-full bg-slate-50 px-4 py-5 dark:bg-slate-900">
+      <main className="mx-auto max-w-lg space-y-5">
         <header className="text-center"><p className="text-xs font-bold text-sky-600">まいにち服薬</p><h1 className="text-2xl font-black text-slate-800 dark:text-white">お薬と設定</h1></header>
-        {message && <button onClick={() => setMessage(null)} className="w-full rounded-2xl bg-sky-50 dark:bg-sky-950/30 border border-sky-200 dark:border-sky-900 p-3 text-sm font-bold text-sky-700 dark:text-sky-300">{message}　×</button>}
+        {message && <button onClick={() => setMessage(null)} className="w-full rounded-2xl border border-sky-200 bg-sky-50 p-3 text-sm font-bold text-sky-700 dark:border-sky-900 dark:bg-sky-950/30 dark:text-sky-300">{message}　×</button>}
 
-        <section className="rounded-3xl bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 p-4 shadow-sm">
+        <section className="rounded-3xl border border-slate-100 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
           <h2 className="text-lg font-black text-slate-800 dark:text-white">登録済みのお薬 ({medications.length})</h2>
           <div className="mt-3 space-y-3">
-            {medications.length === 0 ? <p className="rounded-2xl bg-slate-50 dark:bg-slate-700 p-4 text-center text-sm text-slate-500 dark:text-slate-300">登録されているお薬はありません。</p> : medications.map((medication) => (
-              <article key={medication.id} className="rounded-2xl border border-slate-200 dark:border-slate-600 p-3">
-                <h3 className="font-black text-slate-800 dark:text-white break-words">{medication.name}</h3>
-                <div className="mt-2 flex flex-wrap gap-1">{medication.timings.map((timing) => <span key={timing} className="rounded-full bg-sky-50 dark:bg-slate-700 px-2 py-1 text-[11px] font-bold text-sky-700 dark:text-sky-300">{TIMING_LABELS[timing]}</span>)}</div>
+            {medications.length === 0 ? <p className="rounded-2xl bg-slate-50 p-4 text-center text-sm text-slate-500 dark:bg-slate-700 dark:text-slate-300">登録されているお薬はありません。</p> : medications.map((medication) => (
+              <article key={medication.id} className="rounded-2xl border border-slate-200 p-3 dark:border-slate-600">
+                <div className="flex items-start justify-between gap-2"><h3 className="break-words font-black text-slate-800 dark:text-white">{medication.name}</h3><span className="shrink-0 rounded-full bg-emerald-50 px-2 py-1 text-xs font-black text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">1回 {getMedicationDoseLabel(medication)}</span></div>
+                <div className="mt-2 flex flex-wrap gap-1">{medication.timings.map((timing) => <span key={timing} className="rounded-full bg-sky-50 px-2 py-1 text-[11px] font-bold text-sky-700 dark:bg-slate-700 dark:text-sky-300">{TIMING_LABELS[timing]}</span>)}</div>
+                <p className="mt-2 text-xs font-bold text-slate-500 dark:text-slate-400">{medication.scheduleType === "daily" ? "毎日" : medication.weekdays.map((day) => `${WEEKDAY_LABELS[day]}曜`).join("・")}</p>
                 {medication.memo && <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">{medication.memo}</p>}
-                <div className="mt-3 flex gap-2"><button onClick={() => void startEdit(medication)} className="flex-1 rounded-xl bg-slate-100 dark:bg-slate-700 py-2 text-sm font-bold text-slate-700 dark:text-white">編集する</button><button onClick={() => void deleteMedication(medication)} className="rounded-xl bg-red-50 dark:bg-red-950/30 px-4 py-2 text-sm font-bold text-red-600">削除</button></div>
+                <div className="mt-3 flex gap-2"><button onClick={() => void startEdit(medication)} className="flex-1 rounded-xl bg-slate-100 py-2 text-sm font-bold text-slate-700 dark:bg-slate-700 dark:text-white">編集する</button><button onClick={() => void deleteMedication(medication)} className="rounded-xl bg-red-50 px-4 py-2 text-sm font-bold text-red-600 dark:bg-red-950/30">削除</button></div>
               </article>
             ))}
           </div>
         </section>
 
         <section id="medication-form" className="scroll-mt-4 overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800">
-          <button type="button" onClick={() => setIsFormOpen((open) => !open)} className="flex w-full items-center justify-between px-5 py-5 text-left font-bold text-slate-800 transition-colors hover:bg-slate-50 dark:text-white dark:hover:bg-slate-700/30" aria-expanded={isFormOpen}>
-            <span className="text-base">{editingId === null ? "＋ お薬を登録する" : "✏️ お薬を編集する"}</span>
-            <span className="text-sm text-slate-400">{isFormOpen ? "▲ 閉じる" : "▼ 開く"}</span>
+          <button type="button" onClick={() => setIsFormOpen((open) => !open)} className="flex w-full items-center justify-between px-5 py-5 text-left font-bold text-slate-800 dark:text-white" aria-expanded={isFormOpen}>
+            <span className="text-base">{editingId === null ? "＋ お薬を登録する" : "✏️ お薬を編集する"}</span><span className="text-sm text-slate-400">{isFormOpen ? "▲ 閉じる" : "▼ 開く"}</span>
           </button>
-          {isFormOpen && <div className="space-y-4 border-t border-slate-100 px-4 pb-4 pt-4 dark:border-slate-700">
-          {editingId !== null && <div className="flex justify-end"><button type="button" onClick={() => { resetForm(); setIsFormOpen(false); }} className="text-xs font-bold text-slate-500">編集をやめる</button></div>}
-          <label className="block"><span className="text-sm font-bold text-slate-700 dark:text-slate-200">お薬の名前</span><input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} maxLength={80} placeholder="例：〇〇錠" className="mt-1 w-full rounded-2xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-4 py-3 text-base" /></label>
-          <div><p className="text-sm font-bold text-slate-700 dark:text-slate-200">服用タイミング（複数選択可）</p><div className="mt-2 grid grid-cols-2 gap-2">{ALL_TIMINGS.map((timing) => <button type="button" key={timing} onClick={() => toggleTiming(timing)} className={`rounded-xl border px-3 py-2.5 text-sm font-bold ${form.timings.includes(timing) ? "bg-sky-600 border-sky-600 text-white" : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300"}`}>{TIMING_LABELS[timing]}</button>)}</div></div>
-          <label className="block"><span className="text-sm font-bold text-slate-700 dark:text-slate-200">服用メモ（任意）</span><textarea value={form.memo} onChange={(event) => setForm({ ...form, memo: event.target.value })} maxLength={200} rows={3} placeholder="例：1回1錠。処方された内容をそのまま入力してください。" className="mt-1 w-full resize-none rounded-2xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-4 py-3 text-sm" /></label>
-          <div><p className="text-sm font-bold text-slate-700 dark:text-slate-200">お薬の写真（任意・1枚）</p><p className="mt-1 text-xs text-slate-500">写真はこの端末内だけに保存されます。</p><input ref={cameraInput} type="file" accept="image/*" capture="environment" onChange={(event) => void handlePhoto(event)} className="hidden" /><input ref={galleryInput} type="file" accept="image/*" onChange={(event) => void handlePhoto(event)} className="hidden" /><div className="mt-2 grid grid-cols-2 gap-2"><button onClick={() => cameraInput.current?.click()} className="rounded-xl bg-sky-50 dark:bg-slate-700 py-3 text-sm font-bold text-sky-700 dark:text-sky-300">カメラで撮る</button><button onClick={() => galleryInput.current?.click()} className="rounded-xl bg-slate-100 dark:bg-slate-700 py-3 text-sm font-bold text-slate-700 dark:text-slate-200">画像を選ぶ</button></div>{photoPreview && <div className="mt-3"><div className="h-40 overflow-hidden rounded-2xl bg-slate-100"><img src={photoPreview} alt="登録するお薬の写真" className="h-full w-full object-contain" /></div><button onClick={() => { setPhotoBlob(null); setRemovePhoto(true); setPhotoPreview(null); }} className="mt-2 w-full rounded-xl bg-red-50 py-2 text-sm font-bold text-red-600">写真を削除する</button></div>}</div>
-          <button onClick={() => void saveMedication()} disabled={saving} className="w-full rounded-2xl bg-sky-600 py-4 text-base font-black text-white disabled:opacity-50">{saving ? "保存中…" : editingId === null ? "お薬を登録する" : "変更を保存する"}</button>
+          {isFormOpen && <div className="space-y-5 border-t border-slate-100 px-4 pb-4 pt-4 dark:border-slate-700">
+            {editingId !== null && <div className="flex justify-end"><button type="button" onClick={() => { resetForm(); setIsFormOpen(false); }} className="text-xs font-bold text-slate-500">編集をやめる</button></div>}
+            <label className="block"><span className="text-sm font-bold text-slate-700 dark:text-slate-200">お薬の名前</span><input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} maxLength={80} placeholder="例：アムロジピン錠5mg" className="mt-1 w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-base dark:border-slate-600 dark:bg-slate-900" /></label>
+
+            <div><label className="text-sm font-bold text-slate-700 dark:text-slate-200" htmlFor="dose">1回量</label><select id="dose" value={form.doseChoice} onChange={(event) => setForm({ ...form, doseChoice: event.target.value })} className="mt-1 w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-base dark:border-slate-600 dark:bg-slate-900">{DOSE_OPTIONS.map((dose) => <option key={dose} value={dose}>{dose}</option>)}<option value="other">その他（自由入力）</option></select>{form.doseChoice === "other" && <input inputMode="decimal" type="number" min="0.01" step="any" value={form.customDose} onChange={(event) => setForm({ ...form, customDose: event.target.value })} placeholder="0より大きい数値" className="mt-2 w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-base dark:border-slate-600 dark:bg-slate-900" />}</div>
+
+            <div><p className="text-sm font-bold text-slate-700 dark:text-slate-200">単位</p><div className="mt-2 grid grid-cols-3 gap-2">{UNIT_OPTIONS.map((unit) => <button type="button" key={unit} onClick={() => setForm({ ...form, unit })} className={`rounded-xl border px-2 py-2.5 text-sm font-bold ${form.unit === unit ? "border-sky-600 bg-sky-600 text-white" : "border-slate-200 bg-white text-slate-600 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-300"}`}>{UNIT_LABELS[unit]}</button>)}</div>{form.unit === "other" && <input value={form.customUnit} onChange={(event) => setForm({ ...form, customUnit: event.target.value })} maxLength={20} placeholder="単位名（例：本、滴）" className="mt-2 w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-base dark:border-slate-600 dark:bg-slate-900" />}</div>
+
+            <div><p className="text-sm font-bold text-slate-700 dark:text-slate-200">服用タイミング（複数選択可）</p><p className="mt-1 text-xs text-slate-500">頓服を選ぶと、ほかのタイミングは解除されます。</p><div className="mt-2 grid grid-cols-2 gap-2">{ALL_TIMINGS.map((timing) => <button type="button" key={timing} onClick={() => toggleTiming(timing)} className={`rounded-xl border px-3 py-2.5 text-sm font-bold ${form.timings.includes(timing) ? "border-sky-600 bg-sky-600 text-white" : "border-slate-200 bg-white text-slate-600 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-300"}`}>{TIMING_LABELS[timing]}</button>)}</div></div>
+
+            {!form.timings.includes("as_needed") && <div><p className="text-sm font-bold text-slate-700 dark:text-slate-200">服用する曜日</p><div className="mt-2 grid grid-cols-2 gap-2"><button type="button" onClick={() => setForm({ ...form, scheduleType: "daily", weekdays: [] })} className={`rounded-xl border py-2.5 text-sm font-bold ${form.scheduleType === "daily" ? "border-sky-600 bg-sky-600 text-white" : "border-slate-200 dark:border-slate-600"}`}>毎日</button><button type="button" onClick={() => setForm({ ...form, scheduleType: "weekdays" })} className={`rounded-xl border py-2.5 text-sm font-bold ${form.scheduleType === "weekdays" ? "border-sky-600 bg-sky-600 text-white" : "border-slate-200 dark:border-slate-600"}`}>曜日指定</button></div>{form.scheduleType === "weekdays" && <div className="mt-2 grid grid-cols-7 gap-1">{WEEKDAY_LABELS.map((label, index) => <button type="button" key={label} onClick={() => toggleWeekday(index as Weekday)} className={`aspect-square rounded-full text-xs font-black ${form.weekdays.includes(index as Weekday) ? "bg-emerald-600 text-white" : "bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-200"}`}>{label}</button>)}</div>}</div>}
+
+            <label className="block"><span className="text-sm font-bold text-slate-700 dark:text-slate-200">服用メモ（任意）</span><textarea value={form.memo} onChange={(event) => setForm({ ...form, memo: event.target.value })} maxLength={200} rows={3} placeholder="処方された内容や注意点を入力してください。" className="mt-1 w-full resize-none rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm dark:border-slate-600 dark:bg-slate-900" /></label>
+
+            <div><p className="text-sm font-bold text-slate-700 dark:text-slate-200">お薬の写真（任意・1枚）</p><p className="mt-1 text-xs text-slate-500">写真はこの端末内だけに保存されます。</p><input ref={cameraInput} type="file" accept="image/*" capture="environment" onChange={(event) => void handlePhoto(event)} className="hidden" /><input ref={galleryInput} type="file" accept="image/*" onChange={(event) => void handlePhoto(event)} className="hidden" /><div className="mt-2 grid grid-cols-2 gap-2"><button type="button" onClick={() => cameraInput.current?.click()} className="rounded-xl bg-sky-50 py-3 text-sm font-bold text-sky-700 dark:bg-slate-700 dark:text-sky-300">カメラで撮る</button><button type="button" onClick={() => galleryInput.current?.click()} className="rounded-xl bg-slate-100 py-3 text-sm font-bold text-slate-700 dark:bg-slate-700 dark:text-slate-200">画像を選ぶ</button></div>{photoPreview && <div className="mt-3"><div className="h-40 overflow-hidden rounded-2xl bg-slate-100"><img src={photoPreview} alt="登録するお薬の写真" className="h-full w-full object-contain" /></div><button type="button" onClick={() => { setPhotoBlob(null); setRemovePhoto(true); setPhotoPreview(null); }} className="mt-2 w-full rounded-xl bg-red-50 py-2 text-sm font-bold text-red-600">写真を削除する</button></div>}</div>
+            <button type="button" onClick={() => void saveMedication()} disabled={saving} className="w-full rounded-2xl bg-sky-600 py-4 text-base font-black text-white disabled:opacity-50">{saving ? "保存中…" : editingId === null ? "お薬を登録する" : "変更を保存する"}</button>
           </div>}
         </section>
 
         <section className="overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800">
-          <button type="button" onClick={() => setIsNotificationOpen((open) => !open)} className="flex w-full items-center justify-between px-5 py-5 text-left font-bold text-slate-800 transition-colors hover:bg-slate-50 dark:text-white dark:hover:bg-slate-700/30" aria-expanded={isNotificationOpen}>
-            <span><span className="block text-base">服薬のお知らせ</span><span className="mt-1 block text-xs font-normal text-slate-500">登録薬がある時間帯だけ通知します。</span></span>
-            <span className="flex items-center gap-2"><span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${notifications.enabled ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-600"}`}>{notifications.enabled ? "オン" : "オフ"}</span><span className="text-sm text-slate-400">{isNotificationOpen ? "▲ 閉じる" : "▼ 開く"}</span></span>
+          <button type="button" onClick={() => setIsNotificationOpen((open) => !open)} className="flex w-full items-center justify-between px-5 py-5 text-left font-bold text-slate-800 dark:text-white" aria-expanded={isNotificationOpen}>
+            <span><span className="block text-base">服薬のお知らせ</span><span className="mt-1 block text-xs font-normal text-slate-500">その日に対象のお薬がある時間だけ通知します。</span></span><span className="flex items-center gap-2"><span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${notifications.enabled ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-600"}`}>{notifications.enabled ? "オン" : "オフ"}</span><span className="text-sm text-slate-400">{isNotificationOpen ? "▲ 閉じる" : "▼ 開く"}</span></span>
           </button>
-          {isNotificationOpen && <div className="border-t border-slate-100 px-4 pb-4 pt-4 dark:border-slate-700">
-          <div className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50 p-3 dark:bg-slate-700"><span className="text-sm font-bold text-slate-700 dark:text-slate-200">通知機能</span><button type="button" onClick={() => updateNotifications({ ...notifications, enabled: !notifications.enabled })} className={`rounded-full px-3 py-2 text-xs font-bold ${notifications.enabled ? "bg-emerald-600 text-white" : "bg-slate-200 text-slate-600"}`}>{notifications.enabled ? "オン" : "オフ"}</button></div>
-          {notificationPermission !== "granted" && <button onClick={() => void requestPermission()} disabled={notificationPermission === "unsupported" || notificationPermission === "denied"} className="mt-3 w-full rounded-xl bg-amber-100 dark:bg-amber-950/30 py-2.5 text-sm font-bold text-amber-800 dark:text-amber-300 disabled:opacity-60">{notificationPermission === "unsupported" ? "このブラウザは通知に対応していません" : notificationPermission === "denied" ? "通知がブラウザで拒否されています" : "通知を許可する"}</button>}
-          <div className="mt-4 space-y-2">{SCHEDULED_TIMINGS.map((timing) => <div key={timing} className="flex items-center gap-2 rounded-xl bg-slate-50 dark:bg-slate-700 p-2"><label className="flex min-w-0 flex-1 items-center gap-2 text-sm font-bold text-slate-700 dark:text-slate-200"><input type="checkbox" checked={notifications.slots[timing].enabled} onChange={(event) => updateNotifications({ ...notifications, slots: { ...notifications.slots, [timing]: { ...notifications.slots[timing], enabled: event.target.checked } } })} />{TIMING_LABELS[timing]}</label><input type="time" value={notifications.slots[timing].time} onChange={(event) => updateNotifications({ ...notifications, slots: { ...notifications.slots, [timing]: { ...notifications.slots[timing], time: event.target.value } } })} className="rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm" /></div>)}</div>
-          <p className="mt-3 text-xs leading-relaxed text-slate-500">時刻は例です。処方の指示に合わせて変更してください。端末やブラウザの状態によって、アプリを完全に閉じている間は通知されない場合があります。</p>
-          </div>}
+          {isNotificationOpen && <div className="border-t border-slate-100 px-4 pb-4 pt-4 dark:border-slate-700"><div className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50 p-3 dark:bg-slate-700"><span className="text-sm font-bold text-slate-700 dark:text-slate-200">通知機能</span><button type="button" onClick={() => updateNotifications({ ...notifications, enabled: !notifications.enabled })} className={`rounded-full px-3 py-2 text-xs font-bold ${notifications.enabled ? "bg-emerald-600 text-white" : "bg-slate-200 text-slate-600"}`}>{notifications.enabled ? "オン" : "オフ"}</button></div>{notificationPermission !== "granted" && <button onClick={() => void requestPermission()} disabled={notificationPermission === "unsupported" || notificationPermission === "denied"} className="mt-3 w-full rounded-xl bg-amber-100 py-2.5 text-sm font-bold text-amber-800 disabled:opacity-60 dark:bg-amber-950/30 dark:text-amber-300">{notificationPermission === "unsupported" ? "このブラウザは通知に対応していません" : notificationPermission === "denied" ? "通知がブラウザで拒否されています" : "通知を許可する"}</button>}<div className="mt-4 space-y-2">{SCHEDULED_TIMINGS.map((timing) => <div key={timing} className="flex items-center gap-2 rounded-xl bg-slate-50 p-2 dark:bg-slate-700"><label className="flex min-w-0 flex-1 items-center gap-2 text-sm font-bold text-slate-700 dark:text-slate-200"><input type="checkbox" checked={notifications.slots[timing].enabled} onChange={(event) => updateNotifications({ ...notifications, slots: { ...notifications.slots, [timing]: { ...notifications.slots[timing], enabled: event.target.checked } } })} />{TIMING_LABELS[timing]}</label><input type="time" value={notifications.slots[timing].time} onChange={(event) => updateNotifications({ ...notifications, slots: { ...notifications.slots, [timing]: { ...notifications.slots[timing], time: event.target.value } } })} className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-800" /></div>)}</div><p className="mt-3 text-xs leading-relaxed text-slate-500">時刻は例です。処方の指示に合わせて変更してください。端末やブラウザの状態によって、アプリを完全に閉じている間は通知されない場合があります。</p></div>}
         </section>
 
-        <section className="rounded-3xl bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900 p-4 text-xs leading-relaxed text-amber-900 dark:text-amber-300 space-y-2"><h2 className="text-sm font-black">大切なお知らせ</h2><p>本アプリは服薬の記録を支援する補助ツールで、医療機器ではありません。</p><p>アプリ内の表示より、医師・薬剤師の指示、お薬の説明書を必ず優先してください。</p><p>写真やメモは、お薬手帳・処方箋の代わりにはなりません。</p></section>
-        <button onClick={() => void resetAllData()} className="w-full rounded-2xl border border-red-200 bg-white dark:bg-slate-800 py-3 text-sm font-bold text-red-600">すべてのアプリ内データを初期化する</button>
+        <div className="border-t border-slate-200 pt-5 dark:border-slate-700">
+          <button type="button" onClick={() => setModal("updates")} className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-4 text-left shadow-sm dark:border-slate-700 dark:bg-slate-800"><span className="font-black text-slate-700 dark:text-white">🆙 アップデート情報</span><span className="text-sm font-bold text-slate-400">準備中</span></button>
+          <button type="button" onClick={() => setModal("license")} className="mt-3 flex w-full items-center rounded-2xl border border-slate-200 bg-white px-4 py-4 text-left font-black text-slate-700 shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">📄 ライセンス情報</button>
+          <p className="mt-6 text-center text-sm font-bold text-slate-500">作った人： <a href="https://note.com/note_yongmars" target="_blank" rel="noreferrer" className="text-sky-600 underline underline-offset-4">視能訓練士 ゆうまるす ↗</a></p>
+        </div>
+
+        <section className="border-y border-slate-200 py-5 text-xs leading-relaxed text-slate-500 dark:border-slate-700 dark:text-slate-400">
+          <h2 className="text-center font-black text-slate-600 dark:text-slate-300">【免責事項】</h2>
+          <div className="mt-3 space-y-3"><p>・本アプリは服薬の記録と飲み忘れ防止を支援する補助ツールであり、医療機器ではありません。</p><p>・アプリ内の情報より、必ず医師・薬剤師の指示やお薬の説明書を優先してください。</p><p>・薬の服用可否、飲み忘れ時に今飲むか・次を飛ばすか、薬の相互作用などの医学的判断を本アプリは行いません。迷った場合は医師または薬剤師へご相談ください。</p><div><h3 className="font-black text-slate-600 dark:text-slate-300">・お薬の写真について</h3><p className="mt-1">登録した写真は、使用中のお薬を確認するための端末内の補助記録です。処方内容を証明するものではなく、お薬手帳や処方箋の代わりにはなりません。</p></div></div>
+        </section>
+
+        <div className="pb-4"><p className="mb-3 text-center text-xs text-slate-400">※初期化すると、すべての登録データが完全に消去され、元に戻せません。</p><button type="button" onClick={() => void resetAllData()} className="w-full rounded-2xl border-2 border-red-300 bg-transparent py-4 text-sm font-black text-red-600">🗑️ ⚠ アプリの全データを初期化する</button></div>
       </main>
+
+      {modal === "updates" && <Modal title="アップデート情報" onClose={() => setModal(null)}><p className="rounded-2xl bg-slate-50 p-4 text-center font-bold dark:bg-slate-700">アップデート履歴は今後掲載します。</p></Modal>}
+      {modal === "license" && <Modal title="ライセンス・著作権について" onClose={() => setModal(null)}><p className="font-black text-slate-800 dark:text-white">© 2026 ゆうまるす / yongmars. All rights reserved.</p><p className="mt-4">本アプリに登場するキャラクター「ノクト」「ルクス」「朔」、その他のイラスト、アプリアイコン等は、すべて製作者「ゆうまるす」のオリジナル著作物です。画像の無断転載・複製・商用利用は固くお断りいたします。</p></Modal>}
     </div>
   );
 }

@@ -1,4 +1,10 @@
-import { getAppDateString, ScheduledTiming, SCHEDULED_TIMINGS } from "./medications";
+import {
+  getAppDateString,
+  isMedicationScheduledForAppDate,
+  Medication,
+  ScheduledTiming,
+  SCHEDULED_TIMINGS,
+} from "./medications";
 
 export interface NotificationSlotSetting {
   enabled: boolean;
@@ -27,12 +33,14 @@ export const NOTIFICATION_BODY = "処方の指示を確認して、お薬を飲�
 export const DEFAULT_NOTIFICATION_SETTINGS: LocalNotificationSettings = {
   enabled: true,
   slots: {
+    wake_up: { enabled: true, time: "06:30" },
     breakfast_before: { enabled: true, time: "07:30" },
     breakfast_after: { enabled: true, time: "08:30" },
     lunch_before: { enabled: true, time: "11:30" },
     lunch_after: { enabled: true, time: "12:30" },
     dinner_before: { enabled: true, time: "17:30" },
     dinner_after: { enabled: true, time: "18:30" },
+    between_meals: { enabled: true, time: "15:00" },
     bedtime: { enabled: true, time: "22:00" },
   },
 };
@@ -100,27 +108,29 @@ const getFireDate = (appDate: string, time: string) => {
   return fireAt;
 };
 
-const getCandidates = (settings: LocalNotificationSettings, sent: NotificationSentRecord, appDates: string[]) =>
+const getCandidates = (settings: LocalNotificationSettings, sent: NotificationSentRecord, appDates: string[], medications: Medication[]) =>
   appDates.flatMap((appDate) => SCHEDULED_TIMINGS.flatMap((timing) => {
     const slot = settings.slots[timing];
-    if (!slot.enabled || sent[appDate]?.[timing]) return [];
+    const hasMedication = medications.some((medication) =>
+      medication.timings.includes(timing) && isMedicationScheduledForAppDate(medication, appDate)
+    );
+    if (!slot.enabled || sent[appDate]?.[timing] || !hasMedication) return [];
     return [{ timing, appDate, fireAt: getFireDate(appDate, slot.time) }];
   }));
 
-export const getNextNotification = (settings: LocalNotificationSettings, sent = readNotificationSentRecord(), now = new Date()) => {
+export const getNextNotification = (settings: LocalNotificationSettings, medications: Medication[], sent = readNotificationSentRecord(), now = new Date()) => {
   if (!settings.enabled) return null;
   const today = getAppDateString(now);
-  return getCandidates(settings, sent, [today, addDays(today, 1)])
+  return getCandidates(settings, sent, [today, addDays(today, 1)], medications)
     .filter((candidate) => candidate.fireAt.getTime() > now.getTime())
     .sort((a, b) => a.fireAt.getTime() - b.fireAt.getTime())[0] ?? null;
 };
 
-export const getRecentDueNotification = (settings: LocalNotificationSettings, sent = readNotificationSentRecord(), now = new Date(), lookBackMinutes = 60) => {
+export const getRecentDueNotification = (settings: LocalNotificationSettings, medications: Medication[], sent = readNotificationSentRecord(), now = new Date(), lookBackMinutes = 60) => {
   if (!settings.enabled) return null;
   const today = getAppDateString(now);
   const nowTime = now.getTime();
-  return getCandidates(settings, sent, [addDays(today, -1), today])
+  return getCandidates(settings, sent, [addDays(today, -1), today], medications)
     .filter((candidate) => candidate.fireAt.getTime() <= nowTime && nowTime - candidate.fireAt.getTime() <= lookBackMinutes * 60_000)
     .sort((a, b) => b.fireAt.getTime() - a.fireAt.getTime())[0] ?? null;
 };
-

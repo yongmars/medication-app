@@ -1,4 +1,4 @@
-const CACHE_NAME = "medication-app-v3";
+const CACHE_NAME = "medication-app-v4";
 const base = self.location.pathname.substring(0, self.location.pathname.lastIndexOf("/"));
 const ASSETS = [
   base + "/",
@@ -21,6 +21,7 @@ const ASSETS = [
   base + "/lunch.webp",
   base + "/dinner.webp",
   base + "/bedtime.webp",
+  base + "/paw.webp",
 ];
 
 self.addEventListener("install", (event) => {

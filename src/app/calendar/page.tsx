@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import {
   AS_NEEDED_RECORDS_STORAGE_KEY,
@@ -7,17 +8,40 @@ import {
   DAILY_RECORDS_STORAGE_KEY,
   DailyMedicationRecords,
   getAppDateString,
+  GROUP_TIMINGS,
+  isMedicationScheduledForAppDate,
+  Medication,
+  MedicationTimingGroup,
+  readMedications,
+  ScheduledTiming,
   SCHEDULED_TIMINGS,
   TIMING_LABELS,
 } from "../../lib/medications";
 
 interface CalendarDay { date: Date; key: string; currentMonth: boolean; }
-
+const CALENDAR_GROUPS: MedicationTimingGroup[] = ["wake_up", "morning", "lunch", "dinner", "between_meals", "bedtime"];
+const CALENDAR_LABELS: Record<MedicationTimingGroup, string> = { wake_up: "起床", morning: "朝", lunch: "昼", dinner: "夕", between_meals: "食間", bedtime: "就寝" };
 const makeDateKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 
+const timingMedications = (medications: Medication[], timing: ScheduledTiming, appDate: string) =>
+  medications.filter((medication) => medication.timings.includes(timing) && isMedicationScheduledForAppDate(medication, appDate));
+
+const isTimingComplete = (medications: Medication[], records: DailyMedicationRecords, timing: ScheduledTiming, appDate: string) => {
+  const expected = timingMedications(medications, timing, appDate);
+  const checked = records[appDate]?.[timing]?.checkedMedicationIds ?? [];
+  return expected.length > 0 && expected.every((medication) => checked.includes(medication.id));
+};
+
+const isCalendarGroupComplete = (medications: Medication[], records: DailyMedicationRecords, group: MedicationTimingGroup, appDate: string) => {
+  const applicable = GROUP_TIMINGS[group].filter((timing) => timingMedications(medications, timing, appDate).length > 0);
+  return applicable.length > 0 && applicable.every((timing) => isTimingComplete(medications, records, timing, appDate));
+};
+
 export default function CalendarPage() {
+  const basePath = process.env.NEXT_PUBLIC_BASE_PATH || "";
   const [mounted, setMounted] = useState(false);
   const [monthDate, setMonthDate] = useState(() => new Date());
+  const [medications, setMedications] = useState<Medication[]>([]);
   const [records, setRecords] = useState<DailyMedicationRecords>({});
   const [asNeededRecords, setAsNeededRecords] = useState<AsNeededRecord[]>([]);
   const [selectedDate, setSelectedDate] = useState(getAppDateString());
@@ -25,13 +49,13 @@ export default function CalendarPage() {
   useEffect(() => {
     const hydrateTimer = window.setTimeout(() => {
       setMounted(true);
+      setMedications(readMedications());
       try {
-        setRecords(JSON.parse(localStorage.getItem(DAILY_RECORDS_STORAGE_KEY) || "{}"));
-        setAsNeededRecords(JSON.parse(localStorage.getItem(AS_NEEDED_RECORDS_STORAGE_KEY) || "[]"));
-      } catch {
-        setRecords({});
-        setAsNeededRecords([]);
-      }
+        const daily = JSON.parse(localStorage.getItem(DAILY_RECORDS_STORAGE_KEY) || "{}");
+        const asNeeded = JSON.parse(localStorage.getItem(AS_NEEDED_RECORDS_STORAGE_KEY) || "[]");
+        setRecords(daily && typeof daily === "object" ? daily : {});
+        setAsNeededRecords(Array.isArray(asNeeded) ? asNeeded : []);
+      } catch { setRecords({}); setAsNeededRecords([]); }
     }, 0);
     return () => window.clearTimeout(hydrateTimer);
   }, []);
@@ -54,43 +78,26 @@ export default function CalendarPage() {
   if (!mounted) return <div className="min-h-full grid place-items-center text-slate-500 font-bold">読み込み中...</div>;
 
   return (
-    <div className="min-h-full bg-slate-50 dark:bg-slate-900 px-4 py-5">
-      <main className="max-w-lg mx-auto space-y-4">
-        <header><p className="text-xs font-bold text-sky-600">まいにち服薬</p><h1 className="text-2xl font-black text-slate-800 dark:text-white">服薬履歴</h1></header>
-        <section className="rounded-3xl bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 p-4 shadow-sm">
-          <div className="flex items-center justify-between mb-4">
-            <button onClick={() => setMonthDate(new Date(year, month - 1, 1))} className="h-10 w-10 rounded-xl bg-slate-100 dark:bg-slate-700 font-bold">‹</button>
-            <h2 className="text-lg font-black text-slate-800 dark:text-white">{year}年 {month + 1}月</h2>
-            <button onClick={() => setMonthDate(new Date(year, month + 1, 1))} className="h-10 w-10 rounded-xl bg-slate-100 dark:bg-slate-700 font-bold">›</button>
-          </div>
-          <div className="grid grid-cols-7 gap-1 text-center text-xs font-bold text-slate-400 mb-1">{["日", "月", "火", "水", "木", "金", "土"].map((day) => <div key={day} className="py-1">{day}</div>)}</div>
-          <div className="grid grid-cols-7 gap-1">
+    <div className="min-h-full bg-slate-50 px-2 py-5 dark:bg-slate-900 sm:px-4">
+      <main className="mx-auto max-w-lg space-y-4">
+        <header className="px-2 text-center"><p className="text-xs font-bold text-sky-600">まいにち服薬</p><h1 className="text-2xl font-black text-slate-800 dark:text-white">服薬履歴</h1></header>
+        <section className="rounded-3xl border border-slate-100 bg-white p-3 shadow-sm dark:border-slate-700 dark:bg-slate-800 sm:p-4">
+          <div className="mb-4 flex items-center justify-between"><button type="button" onClick={() => setMonthDate(new Date(year, month - 1, 1))} aria-label="前の月" className="h-10 w-10 rounded-xl bg-slate-100 font-bold dark:bg-slate-700">‹</button><h2 className="text-lg font-black text-slate-800 dark:text-white">{year}年 {month + 1}月</h2><button type="button" onClick={() => setMonthDate(new Date(year, month + 1, 1))} aria-label="次の月" className="h-10 w-10 rounded-xl bg-slate-100 font-bold dark:bg-slate-700">›</button></div>
+          <div className="mb-1 grid grid-cols-7 gap-0.5 text-center text-xs font-bold text-slate-400 sm:gap-1">{["日", "月", "火", "水", "木", "金", "土"].map((day) => <div key={day} className="py-1">{day}</div>)}</div>
+          <div className="grid grid-cols-7 gap-0.5 sm:gap-1">
             {days.map((day) => {
-              const completed = SCHEDULED_TIMINGS.filter((timing) => records[day.key]?.[timing]?.completed).length;
-              const asNeededCount = asNeededRecords.filter((record) => getAppDateString(new Date(record.takenAt)) === day.key).length;
               const selected = selectedDate === day.key;
-              return (
-                <button key={day.key} onClick={() => setSelectedDate(day.key)} className={`min-h-14 rounded-xl border p-1 text-center transition ${selected ? "border-sky-500 bg-sky-50 dark:bg-sky-950/30" : "border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-900"} ${day.currentMonth ? "opacity-100" : "opacity-35"}`}>
-                  <span className={`block text-[11px] font-bold ${day.key === getAppDateString() ? "text-sky-600" : "text-slate-500 dark:text-slate-300"}`}>{day.date.getDate()}</span>
-                  {completed > 0 && <span className="block text-sm leading-4" title={`${completed}時間帯完了`}>🐾</span>}
-                  {(completed > 0 || asNeededCount > 0) && <span className="block text-[9px] font-bold text-slate-400">{completed > 0 ? `${completed}/7` : ""}{asNeededCount > 0 ? ` 頓${asNeededCount}` : ""}</span>}
-                </button>
-              );
+              return <button type="button" key={day.key} onClick={() => setSelectedDate(day.key)} className={`min-h-[94px] rounded-xl border px-0.5 py-1 text-center transition ${selected ? "border-sky-500 bg-sky-50 dark:bg-sky-950/30" : "border-slate-100 bg-slate-50 dark:border-slate-700 dark:bg-slate-900"} ${day.currentMonth ? "opacity-100" : "opacity-35"}`}><span className={`block text-[11px] font-bold ${day.key === getAppDateString() ? "text-sky-600" : "text-slate-500 dark:text-slate-300"}`}>{day.date.getDate()}</span><span className="mt-1 grid grid-cols-2 gap-x-0.5 gap-y-1">{CALENDAR_GROUPS.map((group) => { const complete = isCalendarGroupComplete(medications, records, group, day.key); return <span key={group} className="flex min-h-7 flex-col items-center justify-end"><span className="text-[7px] font-bold leading-none text-slate-400">{CALENDAR_LABELS[group]}</span>{complete ? <Image src={`${basePath}/paw.webp`} alt={`${CALENDAR_LABELS[group]}完了`} width={16} height={16} className="mt-0.5 h-4 w-4 object-contain" /> : <span className="mt-0.5 h-4 text-[9px] text-slate-300">－</span>}</span>; })}</span></button>;
             })}
           </div>
         </section>
 
-        <section className="rounded-3xl bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 p-4 shadow-sm">
+        <section className="rounded-3xl border border-slate-100 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
           <h2 className="font-black text-slate-800 dark:text-white">{selectedDate.replace(/^(\d{4})-(\d{2})-(\d{2})$/, "$1年$2月$3日")}の記録</h2>
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            {SCHEDULED_TIMINGS.map((timing) => {
-              const record = selectedRecord[timing];
-              return <div key={timing} className={`rounded-xl p-2.5 text-sm font-bold ${record?.completed ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300" : "bg-slate-50 text-slate-400 dark:bg-slate-700"}`}><span>{record?.completed ? "✓" : "－"}</span> {TIMING_LABELS[timing]}{record?.checkedMedicationIds.length ? <span className="block pl-5 text-[10px] opacity-70">{record.checkedMedicationIds.length}薬チェック</span> : null}</div>;
-            })}
-          </div>
-          <div className="mt-4 border-t border-slate-100 dark:border-slate-700 pt-3"><h3 className="text-sm font-black text-purple-700 dark:text-purple-300">頓服</h3>{selectedAsNeeded.length === 0 ? <p className="mt-1 text-xs text-slate-400">記録はありません。</p> : selectedAsNeeded.map((record) => <p key={record.id} className="mt-1 text-sm text-slate-600 dark:text-slate-300">{new Date(record.takenAt).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })}　{record.medicationName}</p>)}</div>
+          <div className="mt-3 grid grid-cols-2 gap-2">{SCHEDULED_TIMINGS.map((timing) => { const expected = timingMedications(medications, timing, selectedDate); const record = selectedRecord[timing]; const complete = isTimingComplete(medications, records, timing, selectedDate); return <div key={timing} className={`rounded-xl p-2.5 text-sm font-bold ${complete ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300" : "bg-slate-50 text-slate-400 dark:bg-slate-700"}`}><span>{complete ? "✓" : "－"}</span> {TIMING_LABELS[timing]}<span className="block pl-5 text-[10px] opacity-70">{expected.length === 0 ? "対象なし" : `${record?.checkedMedicationIds?.filter((id) => expected.some((medication) => medication.id === id)).length ?? 0}/${expected.length}薬チェック`}</span></div>; })}</div>
+          <div className="mt-4 border-t border-slate-100 pt-3 dark:border-slate-700"><h3 className="text-sm font-black text-purple-700 dark:text-purple-300">頓服</h3>{selectedAsNeeded.length === 0 ? <p className="mt-1 text-xs text-slate-400">記録はありません。</p> : selectedAsNeeded.map((record) => <p key={record.id} className="mt-1 text-sm text-slate-600 dark:text-slate-300">{new Date(record.takenAt).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })}　{record.medicationName}{record.dose && record.unitLabel ? ` ${record.dose}${record.unitLabel}` : ""}</p>)}</div>
         </section>
-        <p className="px-2 text-xs leading-relaxed text-slate-500">🐾は、その日に服用が完了した時間帯があることを示します。記録はこの端末内だけに保存されます。</p>
+        <p className="flex items-center justify-center gap-2 px-2 text-xs leading-relaxed text-slate-500"><Image src={`${basePath}/paw.webp`} alt="完了スタンプ" width={22} height={22} />は、その日に対象となるお薬を時間帯ごとにすべて記録した印です。</p>
       </main>
     </div>
   );
