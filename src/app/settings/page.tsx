@@ -318,7 +318,7 @@ export default function SettingsPage() {
         </section>
 
         <div className="border-t border-slate-200 pt-5 dark:border-slate-700">
-          <button type="button" onClick={() => setModal("updates")} className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-4 text-left shadow-sm dark:border-slate-700 dark:bg-slate-800"><span className="font-black text-slate-700 dark:text-white">🆙 アップデート情報</span><span className="text-sm font-bold text-slate-400">Ver. 1.0.0</span></button>
+          <button type="button" onClick={() => setModal("updates")} className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-4 text-left shadow-sm dark:border-slate-700 dark:bg-slate-800"><span className="font-black text-slate-700 dark:text-white">🆙 アップデート情報</span><span className="text-sm font-bold text-slate-400">Ver. 1.0.1</span></button>
           <button type="button" onClick={() => setModal("license")} className="mt-3 flex w-full items-center rounded-2xl border border-slate-200 bg-white px-4 py-4 text-left font-black text-slate-700 shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">📄 ライセンス情報</button>
           <p className="mt-6 text-center text-sm font-bold text-slate-500">作った人： <a href="https://note.com/note_yongmars" target="_blank" rel="noreferrer" className="text-sky-600 underline underline-offset-4">視能訓練士 ゆうまるす ↗</a></p>
         </div>
@@ -331,7 +331,7 @@ export default function SettingsPage() {
         <div className="pb-4"><p className="mb-3 text-center text-xs text-slate-400">※初期化すると、すべての登録データが完全に消去され、元に戻せません。</p><button type="button" onClick={() => void resetAllData()} className="w-full rounded-2xl border-2 border-red-300 bg-transparent py-4 text-sm font-black text-red-600">🗑️ ⚠ アプリの全データを初期化する</button></div>
       </main>
 
-      {modal === "updates" && <Modal title="アップデート情報" onClose={() => setModal(null)}><article><h3 className="text-base font-black text-slate-800 dark:text-white">■ Ver. 1.0.0（2026年8月）</h3><ul className="mt-3 space-y-2 pl-1"><li>・『ノクトのまいにち内服管理アプリ』が誕生！</li><li>・毎日の内服チェックに対応。</li><li>・同じ時間帯に複数の薬を服用する場合もまとめて管理できます。</li><li>・錠剤・カプセルは、同じ服用タイミングなら1回のチェックでまとめて記録できます。</li></ul></article></Modal>}
+      {modal === "updates" && <Modal title="アップデート情報" onClose={() => setModal(null)}><div className="space-y-6"><article><div className="flex flex-wrap items-center gap-2"><h3 className="text-base font-black text-slate-800 dark:text-white">■ Ver. 1.0.1（2026年8月）</h3><span className="rounded-md border border-rose-200 bg-rose-50 px-2 py-0.5 text-xs font-black text-rose-500 dark:border-rose-800 dark:bg-rose-950/40">NEW</span></div><ul className="mt-3 space-y-2 pl-1"><li>・薬の登録時に「この薬は別に飲む」を設定できるようになりました。</li></ul></article><article className="border-t border-slate-200 pt-6 dark:border-slate-700"><h3 className="text-base font-black text-slate-800 dark:text-white">■ Ver. 1.0.0（2026年8月）</h3><ul className="mt-3 space-y-2 pl-1"><li>・『ノクトのまいにち内服管理アプリ』が誕生！</li><li>・毎日の内服チェックに対応。</li><li>・同じ時間帯に複数の薬を服用する場合もまとめて管理できます。</li><li>・錠剤・カプセルは、同じ服用タイミングなら1回のチェックでまとめて記録できます。</li></ul></article></div></Modal>}
       {modal === "license" && <Modal title="ライセンス・著作権について" onClose={() => setModal(null)}><p className="font-black text-slate-800 dark:text-white">© 2026 ゆうまるす / yongmars. All rights reserved.</p><p className="mt-4">本アプリに登場するキャラクター「ノクト」「ルクス」「朔」、その他のイラスト、アプリアイコン等は、すべて製作者「ゆうまるす」のオリジナル著作物です。画像の無断転載・複製・商用利用は固くお断りいたします。</p></Modal>}
     </div>
   );
