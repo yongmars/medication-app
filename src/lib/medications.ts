@@ -29,6 +29,7 @@ export interface Medication {
   weekdays: Weekday[];
   separateCheck: boolean;
   memo?: string;
+  updatedAt?: string;
 }
 
 export interface TimingRecord {
@@ -207,6 +208,7 @@ export const normalizeMedication = (value: unknown): Medication | null => {
     weekdays: scheduleType === "weekdays" ? weekdays : [],
     separateCheck: source.separateCheck === true,
     memo: typeof source.memo === "string" && source.memo.trim() ? source.memo.trim() : undefined,
+    updatedAt: typeof source.updatedAt === "string" && Number.isFinite(Date.parse(source.updatedAt)) ? source.updatedAt : undefined,
   };
 };
 

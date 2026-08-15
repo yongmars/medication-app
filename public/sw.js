@@ -1,7 +1,8 @@
-const CACHE_NAME = "medication-app-v4";
+const CACHE_NAME = "medication-app-v5";
 const base = self.location.pathname.substring(0, self.location.pathname.lastIndexOf("/"));
 const ASSETS = [
   base + "/",
+  base + "/medicine-list",
   base + "/manifest.webmanifest",
   base + "/medicine192.png",
   base + "/medicine512.png",

@@ -7,7 +7,7 @@ export default function Navbar() {
   const pathname = usePathname();
 
   const getTabClass = (path: string) => {
-    const active = pathname === path;
+    const active = pathname === path || (path === "/settings" && pathname === "/medicine-list");
     return `flex h-full w-full flex-col items-center justify-center transition-colors ${
       active
         ? "bg-blue-50/30 text-blue-500 dark:bg-slate-700/50"

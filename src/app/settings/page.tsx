@@ -4,6 +4,7 @@
 
 import { ChangeEvent, useEffect, useRef, useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import {
   clearMedicationPhotos,
   compressMedicationPhoto,
@@ -196,6 +197,7 @@ export default function SettingsPage() {
       weekdays: form.scheduleType === "weekdays" ? form.weekdays : [],
       separateCheck: form.separateCheck,
       memo: form.memo.trim() || undefined,
+      updatedAt: new Date().toISOString(),
     };
     const next = editingId === null ? [...medications, medication] : medications.map((item) => item.id === editingId ? medication : item);
     try {
@@ -268,6 +270,11 @@ export default function SettingsPage() {
       <main className="mx-auto max-w-lg space-y-5 px-4 py-5">
         <header className="text-center"><h1 className="text-2xl font-black text-slate-800 dark:text-white">お薬と設定</h1></header>
         {message && <button onClick={() => setMessage(null)} className="w-full rounded-2xl border border-sky-200 bg-sky-50 p-3 text-sm font-bold text-sky-700 dark:border-sky-900 dark:bg-sky-950/30 dark:text-sky-300">{message}　×</button>}
+
+        <Link href="/medicine-list" className="block w-full rounded-3xl bg-gradient-to-r from-sky-500 to-blue-600 p-5 text-left text-white shadow-md transition-transform active:scale-[0.99]">
+          <span className="block text-lg font-black">使用中の内服薬一覧</span>
+          <span className="mt-1 block text-sm leading-relaxed text-sky-50">受診・調剤時や、もしものときの確認に使えます</span>
+        </Link>
 
         <section className="rounded-3xl border border-slate-100 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
           <h2 className="text-lg font-black text-slate-800 dark:text-white">登録済みのお薬 ({medications.length})</h2>
