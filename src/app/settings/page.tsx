@@ -18,6 +18,7 @@ import {
   DailyMedicationRecords,
   getAppDateString,
   getMedicationDoseLabel,
+  isActiveMedication,
   isMedicationScheduledForAppDate,
   Medication,
   MedicationScheduleType,
@@ -40,7 +41,7 @@ import {
 
 const DOSE_OPTIONS = ["0.25", "0.5", "1", "1.5", "2", "3", "4", "5", "6", "7", "8", "9", "10"];
 const UNIT_OPTIONS: MedicationUnit[] = ["tablet", "capsule", "packet", "ml", "other"];
-const UPDATE_VERSION = "1.0.2";
+const UPDATE_VERSION = "1.0.3";
 const UPDATE_READ_STORAGE_KEY = `medication-update-read-${UPDATE_VERSION}`;
 
 interface MedicationForm {
@@ -69,6 +70,10 @@ const createEmptyForm = (): MedicationForm => ({
   memo: "",
 });
 
+const formatArchivedDate = (archivedAt?: string) => archivedAt
+  ? new Intl.DateTimeFormat("ja-JP", { year: "numeric", month: "long", day: "numeric" }).format(new Date(archivedAt))
+  : "記録なし";
+
 function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 animate-fade-in" role="dialog" aria-modal="true" aria-label={title} onClick={onClose}>
@@ -90,6 +95,9 @@ export default function SettingsPage() {
   const [medications, setMedications] = useState<Medication[]>([]);
   const [form, setForm] = useState<MedicationForm>(createEmptyForm);
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [restartingId, setRestartingId] = useState<number | null>(null);
+  const [expandedArchivedId, setExpandedArchivedId] = useState<number | null>(null);
+  const [archivedPhotoUrls, setArchivedPhotoUrls] = useState<Record<number, string | null>>({});
   const [photoBlob, setPhotoBlob] = useState<Blob | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [removePhoto, setRemovePhoto] = useState(false);
@@ -103,6 +111,10 @@ export default function SettingsPage() {
   const [modal, setModal] = useState<"updates" | "license" | null>(null);
   const cameraInput = useRef<HTMLInputElement>(null);
   const galleryInput = useRef<HTMLInputElement>(null);
+  const archivedPhotoUrlsRef = useRef<string[]>([]);
+
+  const activeMedications = medications.filter(isActiveMedication);
+  const archivedMedications = medications.filter((medication) => !isActiveMedication(medication));
 
   useEffect(() => {
     const hydrateTimer = window.setTimeout(() => {
@@ -116,10 +128,12 @@ export default function SettingsPage() {
   }, []);
 
   useEffect(() => () => { if (photoPreview) URL.revokeObjectURL(photoPreview); }, [photoPreview]);
+  useEffect(() => () => archivedPhotoUrlsRef.current.forEach((url) => URL.revokeObjectURL(url)), []);
 
   const resetForm = () => {
     setForm(createEmptyForm());
     setEditingId(null);
+    setRestartingId(null);
     setPhotoBlob(null);
     setRemovePhoto(false);
     setPhotoPreview((previous) => { if (previous) URL.revokeObjectURL(previous); return null; });
@@ -138,7 +152,7 @@ export default function SettingsPage() {
           const record = todayRecord[timing];
           if (!record) return;
           const requiredIds = next
-            .filter((medication) => medication.timings.includes(timing) && isMedicationScheduledForAppDate(medication, appDate))
+            .filter((medication) => isActiveMedication(medication) && medication.timings.includes(timing) && isMedicationScheduledForAppDate(medication, appDate))
             .map((medication) => medication.id);
           record.completed = requiredIds.length > 0 && requiredIds.every((id) => record.checkedMedicationIds.includes(id));
         });
@@ -202,6 +216,7 @@ export default function SettingsPage() {
       separateCheck: form.separateCheck,
       memo: form.memo.trim() || undefined,
       updatedAt: new Date().toISOString(),
+      status: "active",
     };
     const next = editingId === null ? [...medications, medication] : medications.map((item) => item.id === editingId ? medication : item);
     try {
@@ -209,7 +224,7 @@ export default function SettingsPage() {
       if (photoBlob) await saveMedicationPhoto(id, photoBlob);
       persistMedicationList(next);
       setMedications(next);
-      setMessage(editingId === null ? "お薬を登録しました。" : "お薬の情報を更新しました。");
+      setMessage(editingId === null ? "お薬を登録しました。" : restartingId === editingId ? "お薬を再開しました。現在の服薬対象に戻りました。" : "お薬の情報を更新しました。");
       resetForm();
       setIsFormOpen(false);
     } catch (error) {
@@ -219,10 +234,11 @@ export default function SettingsPage() {
     }
   };
 
-  const startEdit = async (medication: Medication) => {
+  const startEdit = async (medication: Medication, restart = false) => {
     resetForm();
     setIsFormOpen(true);
     setEditingId(medication.id);
+    setRestartingId(restart ? medication.id : null);
     const doseString = String(medication.dose);
     setForm({
       name: medication.name,
@@ -243,14 +259,52 @@ export default function SettingsPage() {
     window.requestAnimationFrame(() => document.getElementById("medication-form")?.scrollIntoView({ behavior: "smooth", block: "start" }));
   };
 
-  const deleteMedication = async (medication: Medication) => {
-    if (!confirm(`${medication.name}を削除しますか？ 過去の服薬履歴は残ります。`)) return;
-    const next = medications.filter((item) => item.id !== medication.id);
+  const archiveMedication = (medication: Medication) => {
+    if (!confirm(`${medication.name}の服用を終了しますか？\n現在の服薬・通知対象から外れ、「過去の薬」に保存されます。写真や登録情報は残ります。`)) return;
+    const next = medications.map((item) => item.id === medication.id ? { ...item, status: "archived" as const, archivedAt: new Date().toISOString() } : item);
     persistMedicationList(next);
     setMedications(next);
-    try { await deleteMedicationPhoto(medication.id); } catch { /* 本体の削除を優先 */ }
-    if (editingId === medication.id) resetForm();
-    setMessage("お薬を削除しました。");
+    if (editingId === medication.id) {
+      resetForm();
+      setIsFormOpen(false);
+    }
+    setMessage("服用終了として過去の薬に保存しました。");
+  };
+
+  const toggleArchivedDetails = async (medication: Medication) => {
+    if (expandedArchivedId === medication.id) {
+      setExpandedArchivedId(null);
+      return;
+    }
+    setExpandedArchivedId(medication.id);
+    if (Object.hasOwn(archivedPhotoUrls, medication.id)) return;
+    try {
+      const photo = await getMedicationPhoto(medication.id);
+      if (!photo) {
+        setArchivedPhotoUrls((current) => ({ ...current, [medication.id]: null }));
+        return;
+      }
+      const url = URL.createObjectURL(photo.blob);
+      archivedPhotoUrlsRef.current.push(url);
+      setArchivedPhotoUrls((current) => ({ ...current, [medication.id]: url }));
+    } catch {
+      setArchivedPhotoUrls((current) => ({ ...current, [medication.id]: null }));
+    }
+  };
+
+  const deleteMedication = async (medication: Medication) => {
+    if (!confirm(`この薬を完全に削除しますか？\n\n${medication.name}\n\n写真や登録情報も削除され、元に戻せません。`)) return;
+    try {
+      await deleteMedicationPhoto(medication.id);
+      const next = medications.filter((item) => item.id !== medication.id);
+      persistMedicationList(next);
+      setMedications(next);
+      if (editingId === medication.id) resetForm();
+      if (expandedArchivedId === medication.id) setExpandedArchivedId(null);
+      setMessage("お薬と写真を完全に削除しました。");
+    } catch {
+      setMessage("完全削除に失敗しました。お薬と写真は削除されていません。もう一度お試しください。");
+    }
   };
 
   const updateNotifications = (next: LocalNotificationSettings) => { setNotifications(next); saveNotificationSettings(next); };
@@ -286,27 +340,48 @@ export default function SettingsPage() {
         </Link>
 
         <section className="rounded-3xl border border-slate-100 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-          <h2 className="text-lg font-black text-slate-800 dark:text-white">登録済みのお薬 ({medications.length})</h2>
+          <h2 className="text-lg font-black text-slate-800 dark:text-white">現在使用中のお薬 ({activeMedications.length})</h2>
           <div className="mt-3 space-y-3">
-            {medications.length === 0 ? <p className="rounded-2xl bg-slate-50 p-4 text-center text-sm text-slate-500 dark:bg-slate-700 dark:text-slate-300">登録されているお薬はありません。</p> : medications.map((medication) => (
+            {activeMedications.length === 0 ? <p className="rounded-2xl bg-slate-50 p-4 text-center text-sm text-slate-500 dark:bg-slate-700 dark:text-slate-300">現在使用中のお薬はありません。</p> : activeMedications.map((medication) => (
               <article key={medication.id} className="rounded-2xl border border-slate-200 p-3 dark:border-slate-600">
                 <div className="flex items-start justify-between gap-2"><h3 className="break-words font-black text-slate-800 dark:text-white">{medication.name}</h3><span className="shrink-0 rounded-full bg-emerald-50 px-2 py-1 text-xs font-black text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">1回 {getMedicationDoseLabel(medication)}</span></div>
                 <div className="mt-2 flex flex-wrap gap-1">{medication.timings.map((timing) => <span key={timing} className="rounded-full bg-sky-50 px-2 py-1 text-[11px] font-bold text-sky-700 dark:bg-slate-700 dark:text-sky-300">{TIMING_LABELS[timing]}</span>)}</div>
                 {medication.separateCheck && <span className="mt-2 inline-flex rounded-full bg-purple-50 px-2 py-1 text-[11px] font-bold text-purple-700 dark:bg-purple-950/30 dark:text-purple-300">別に飲む</span>}
                 <p className="mt-2 text-xs font-bold text-slate-500 dark:text-slate-400">{medication.scheduleType === "daily" ? "毎日" : medication.weekdays.map((day) => `${WEEKDAY_LABELS[day]}曜`).join("・")}</p>
                 {medication.memo && <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">{medication.memo}</p>}
-                <div className="mt-3 flex gap-2"><button onClick={() => void startEdit(medication)} className="flex-1 rounded-xl bg-slate-100 py-2 text-sm font-bold text-slate-700 dark:bg-slate-700 dark:text-white">編集する</button><button onClick={() => void deleteMedication(medication)} className="rounded-xl bg-red-50 px-4 py-2 text-sm font-bold text-red-600 dark:bg-red-950/30">削除</button></div>
+                <div className="mt-3 grid grid-cols-2 gap-2"><button onClick={() => void startEdit(medication)} className="rounded-xl bg-slate-100 py-2 text-sm font-bold text-slate-700 dark:bg-slate-700 dark:text-white">編集する</button><button onClick={() => archiveMedication(medication)} className="rounded-xl bg-amber-50 py-2 text-sm font-bold text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">服用終了</button><button onClick={() => void deleteMedication(medication)} className="col-span-2 rounded-xl border border-red-200 bg-white py-2 text-sm font-bold text-red-600 dark:border-red-900/50 dark:bg-slate-800">完全に削除</button></div>
               </article>
             ))}
           </div>
         </section>
 
+        <section className="rounded-3xl border border-slate-200 bg-slate-100/70 p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800/70">
+          <div className="flex items-center justify-between gap-3"><div><h2 className="text-lg font-black text-slate-800 dark:text-white">過去の薬 ({archivedMedications.length})</h2><p className="mt-1 text-xs leading-relaxed text-slate-500 dark:text-slate-400">服用終了した薬です。毎日の服薬や通知には表示されません。</p></div><span className="shrink-0 rounded-full bg-slate-200 px-2.5 py-1 text-xs font-black text-slate-600 dark:bg-slate-700 dark:text-slate-300">服用終了</span></div>
+          <div className="mt-3 space-y-3">
+            {archivedMedications.length === 0 ? <p className="rounded-2xl bg-white p-4 text-center text-sm text-slate-500 dark:bg-slate-800 dark:text-slate-300">過去の薬はありません。</p> : archivedMedications.map((medication) => {
+              const isExpanded = expandedArchivedId === medication.id;
+              const archivedPhotoUrl = archivedPhotoUrls[medication.id];
+              return <article key={medication.id} className="rounded-2xl border border-slate-300 bg-white p-3 dark:border-slate-600 dark:bg-slate-800">
+                <div className="flex items-start justify-between gap-2"><div className="min-w-0"><h3 className="break-words font-black text-slate-800 dark:text-white">{medication.name}</h3><p className="mt-1 text-xs font-bold text-slate-500 dark:text-slate-400">服用終了日：{formatArchivedDate(medication.archivedAt)}</p></div><span className="shrink-0 rounded-full bg-slate-100 px-2 py-1 text-xs font-black text-slate-600 dark:bg-slate-700 dark:text-slate-300">1回 {getMedicationDoseLabel(medication)}</span></div>
+                {isExpanded && <div className="mt-3 rounded-2xl bg-slate-50 p-3 dark:bg-slate-900/70">
+                  <div className="flex gap-3">
+                    {archivedPhotoUrl ? <img src={archivedPhotoUrl} alt={`${medication.name}の写真`} className="h-20 w-20 shrink-0 rounded-xl border border-slate-200 object-cover dark:border-slate-700" /> : <div className="grid h-20 w-20 shrink-0 place-items-center rounded-xl border border-dashed border-slate-300 px-2 text-center text-[11px] font-bold text-slate-400 dark:border-slate-600">{Object.hasOwn(archivedPhotoUrls, medication.id) ? "写真未登録" : "写真確認中"}</div>}
+                    <dl className="min-w-0 flex-1 space-y-2 text-xs"><div><dt className="font-bold text-slate-500">服用タイミング</dt><dd className="mt-0.5 break-words font-bold text-slate-800 dark:text-slate-100">{medication.timings.map((timing) => TIMING_LABELS[timing]).join("・")}</dd></div><div><dt className="font-bold text-slate-500">服用する曜日</dt><dd className="mt-0.5 font-bold text-slate-800 dark:text-slate-100">{medication.scheduleType === "daily" ? "毎日" : medication.weekdays.map((day) => `${WEEKDAY_LABELS[day]}曜`).join("・")}</dd></div><div><dt className="font-bold text-slate-500">他の薬とのまとめ方</dt><dd className="mt-0.5 font-bold text-slate-800 dark:text-slate-100">{medication.separateCheck ? "この薬は別に飲む" : "まとめて飲む"}</dd></div></dl>
+                  </div>
+                  {medication.memo && <div className="mt-3 border-t border-slate-200 pt-3 text-xs dark:border-slate-700"><p className="font-bold text-slate-500">メモ</p><p className="mt-1 break-words text-slate-700 dark:text-slate-200">{medication.memo}</p></div>}
+                </div>}
+                <div className="mt-3 grid grid-cols-2 gap-2"><button onClick={() => void startEdit(medication, true)} className="rounded-xl bg-emerald-600 py-2 text-sm font-bold text-white">再開する</button><button onClick={() => void toggleArchivedDetails(medication)} className="rounded-xl bg-slate-100 py-2 text-sm font-bold text-slate-700 dark:bg-slate-700 dark:text-white">{isExpanded ? "詳細を閉じる" : "詳細を見る"}</button><button onClick={() => void deleteMedication(medication)} className="col-span-2 rounded-xl border border-red-200 bg-white py-2 text-sm font-bold text-red-600 dark:border-red-900/50 dark:bg-slate-800">完全に削除</button></div>
+              </article>;
+            })}
+          </div>
+        </section>
+
         <section id="medication-form" className="scroll-mt-4 overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800">
           <button type="button" onClick={() => setIsFormOpen((open) => !open)} className="flex w-full items-center justify-between px-5 py-5 text-left font-bold text-slate-800 dark:text-white" aria-expanded={isFormOpen}>
-            <span className="text-base">{editingId === null ? "＋ お薬を登録する" : "✏️ お薬を編集する"}</span><span className="text-sm text-slate-400">{isFormOpen ? "▲ 閉じる" : "▼ 開く"}</span>
+            <span className="text-base">{editingId === null ? "＋ お薬を登録する" : restartingId === editingId ? "↩️ 過去の薬を再開する" : "✏️ お薬を編集する"}</span><span className="text-sm text-slate-400">{isFormOpen ? "▲ 閉じる" : "▼ 開く"}</span>
           </button>
           {isFormOpen && <div className="space-y-5 border-t border-slate-100 px-4 pb-4 pt-4 dark:border-slate-700">
-            {editingId !== null && <div className="flex justify-end"><button type="button" onClick={() => { resetForm(); setIsFormOpen(false); }} className="text-xs font-bold text-slate-500">編集をやめる</button></div>}
+            {editingId !== null && <><div className="flex justify-end"><button type="button" onClick={() => { resetForm(); setIsFormOpen(false); }} className="text-xs font-bold text-slate-500">{restartingId === editingId ? "再開をやめる" : "編集をやめる"}</button></div>{restartingId === editingId && <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs font-bold leading-relaxed text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">以前と処方内容が変わっている場合があります。1回量、服用タイミング、曜日などを現在の処方に合わせて確認してから再開してください。</div>}</>}
             <label className="block"><span className="text-sm font-bold text-slate-700 dark:text-slate-200">お薬の名前</span><input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} maxLength={80} placeholder="例：アムロジピン錠5mg" className="mt-1 w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-base dark:border-slate-600 dark:bg-slate-900" /></label>
 
             <div><label className="text-sm font-bold text-slate-700 dark:text-slate-200" htmlFor="dose">1回量</label><select id="dose" value={form.doseChoice} onChange={(event) => setForm({ ...form, doseChoice: event.target.value })} className="mt-1 w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-base dark:border-slate-600 dark:bg-slate-900">{DOSE_OPTIONS.map((dose) => <option key={dose} value={dose}>{dose}</option>)}<option value="other">その他（自由入力）</option></select>{form.doseChoice === "other" && <input inputMode="decimal" type="number" min="0.01" step="any" value={form.customDose} onChange={(event) => setForm({ ...form, customDose: event.target.value })} placeholder="0より大きい数値" className="mt-2 w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-base dark:border-slate-600 dark:bg-slate-900" />}</div>
@@ -322,7 +397,7 @@ export default function SettingsPage() {
             <label className="block"><span className="text-sm font-bold text-slate-700 dark:text-slate-200">服用メモ（任意）</span><textarea value={form.memo} onChange={(event) => setForm({ ...form, memo: event.target.value })} maxLength={200} rows={3} placeholder="処方された内容や注意点を入力してください。" className="mt-1 w-full resize-none rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm dark:border-slate-600 dark:bg-slate-900" /></label>
 
             <div><p className="text-sm font-bold text-slate-700 dark:text-slate-200">お薬の写真（任意・1枚）</p><p className="mt-1 text-xs text-slate-500">写真はこの端末内だけに保存されます。</p><input ref={cameraInput} type="file" accept="image/*" capture="environment" onChange={(event) => void handlePhoto(event)} className="hidden" /><input ref={galleryInput} type="file" accept="image/*" onChange={(event) => void handlePhoto(event)} className="hidden" /><div className="mt-2 grid grid-cols-2 gap-2"><button type="button" onClick={() => cameraInput.current?.click()} className="rounded-xl bg-sky-50 py-3 text-sm font-bold text-sky-700 dark:bg-slate-700 dark:text-sky-300">カメラで撮る</button><button type="button" onClick={() => galleryInput.current?.click()} className="rounded-xl bg-slate-100 py-3 text-sm font-bold text-slate-700 dark:bg-slate-700 dark:text-slate-200">画像を選ぶ</button></div>{photoPreview && <div className="mt-3"><div className="h-40 overflow-hidden rounded-2xl bg-slate-100"><img src={photoPreview} alt="登録するお薬の写真" className="h-full w-full object-contain" /></div><button type="button" onClick={() => { setPhotoBlob(null); setRemovePhoto(true); setPhotoPreview(null); }} className="mt-2 w-full rounded-xl bg-red-50 py-2 text-sm font-bold text-red-600">写真を削除する</button></div>}</div>
-            <button type="button" onClick={() => void saveMedication()} disabled={saving} className="w-full rounded-2xl bg-sky-600 py-4 text-base font-black text-white disabled:opacity-50">{saving ? "保存中…" : editingId === null ? "お薬を登録する" : "変更を保存する"}</button>
+            <button type="button" onClick={() => void saveMedication()} disabled={saving} className="w-full rounded-2xl bg-sky-600 py-4 text-base font-black text-white disabled:opacity-50">{saving ? "保存中…" : editingId === null ? "お薬を登録する" : restartingId === editingId ? "確認して服用を再開する" : "変更を保存する"}</button>
           </div>}
         </section>
 
@@ -334,7 +409,7 @@ export default function SettingsPage() {
         </section>
 
         <div className="border-t border-slate-200 pt-5 dark:border-slate-700">
-          <button type="button" onClick={openUpdateHistory} className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-4 text-left shadow-sm dark:border-slate-700 dark:bg-slate-800"><span className="flex items-center gap-2 font-black text-slate-700 dark:text-white">🆙 アップデート情報{!hasReadUpdate && <span className="rounded border border-red-200 bg-red-100 px-1.5 py-0.5 text-[10px] font-black text-red-600 dark:border-red-900/30 dark:bg-red-950/30 dark:text-red-400">NEW!</span>}</span><span className="text-sm font-bold text-slate-400">Ver. 1.0.2</span></button>
+          <button type="button" onClick={openUpdateHistory} className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-4 text-left shadow-sm dark:border-slate-700 dark:bg-slate-800"><span className="flex items-center gap-2 font-black text-slate-700 dark:text-white">🆙 アップデート情報{!hasReadUpdate && <span className="rounded border border-red-200 bg-red-100 px-1.5 py-0.5 text-[10px] font-black text-red-600 dark:border-red-900/30 dark:bg-red-950/30 dark:text-red-400">NEW!</span>}</span><span className="text-sm font-bold text-slate-400">Ver. 1.0.3</span></button>
           <button type="button" onClick={() => setModal("license")} className="mt-3 flex w-full items-center rounded-2xl border border-slate-200 bg-white px-4 py-4 text-left font-black text-slate-700 shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">📄 ライセンス情報</button>
           <p className="mt-6 text-center text-sm font-bold text-slate-500">作った人： <a href="https://note.com/note_yongmars" target="_blank" rel="noreferrer" className="text-sky-600 underline underline-offset-4">視能訓練士 ゆうまるす ↗</a></p>
         </div>
@@ -347,7 +422,7 @@ export default function SettingsPage() {
         <div className="pb-4"><p className="mb-3 text-center text-xs text-slate-400">※初期化すると、すべての登録データが完全に消去され、元に戻せません。</p><button type="button" onClick={() => void resetAllData()} className="w-full rounded-2xl border-2 border-red-300 bg-transparent py-4 text-sm font-black text-red-600">🗑️ ⚠ アプリの全データを初期化する</button></div>
       </main>
 
-      {modal === "updates" && <Modal title="アップデート情報" onClose={() => setModal(null)}><div className="space-y-6"><article><h3 className="text-base font-black text-slate-800 dark:text-white">■ Ver. 1.0.2 (2026年8月16日)</h3><ul className="mt-3 space-y-2 pl-1"><li>・「使用中の内服薬一覧」を追加しました。</li><li>・登録している内服薬の写真や薬名、1回量、服用タイミングなどを一覧で確認できるようになりました。</li><li>・災害時・受診時・調剤時などに、使用中の内服薬を確認しやすくなりました。</li></ul></article><article className="border-t border-slate-200 pt-6 dark:border-slate-700"><h3 className="text-base font-black text-slate-800 dark:text-white">■ Ver. 1.0.1（2026年8月）</h3><ul className="mt-3 space-y-2 pl-1"><li>・薬の登録時に「この薬は別に飲む」を設定できるようになりました。</li></ul></article><article className="border-t border-slate-200 pt-6 dark:border-slate-700"><h3 className="text-base font-black text-slate-800 dark:text-white">■ Ver. 1.0.0（2026年8月）</h3><ul className="mt-3 space-y-2 pl-1"><li>・『ノクトのまいにち内服管理アプリ』が誕生！</li><li>・毎日の内服チェックに対応。</li><li>・同じ時間帯に複数の薬を服用する場合もまとめて管理できます。</li><li>・錠剤・カプセルは、同じ服用タイミングなら1回のチェックでまとめて記録できます。</li></ul></article></div></Modal>}
+      {modal === "updates" && <Modal title="アップデート情報" onClose={() => setModal(null)}><div className="space-y-6"><article><h3 className="text-base font-black text-slate-800 dark:text-white">■ Ver. 1.0.3（2026年8月17日）</h3><ul className="mt-3 space-y-2 pl-1"><li>・「過去の薬」機能を追加しました。</li><li>・飲まなくなった薬を削除せず、「服用終了」として写真や登録内容を残せるようになりました。</li><li>・過去の薬は一覧から確認でき、再び服用することになった場合は、登録内容を引き継いで再開できます。</li></ul></article><article className="border-t border-slate-200 pt-6 dark:border-slate-700"><h3 className="text-base font-black text-slate-800 dark:text-white">■ Ver. 1.0.2 (2026年8月16日)</h3><ul className="mt-3 space-y-2 pl-1"><li>・「使用中の内服薬一覧」を追加しました。</li><li>・登録している内服薬の写真や薬名、1回量、服用タイミングなどを一覧で確認できるようになりました。</li><li>・災害時・受診時・調剤時などに、使用中の内服薬を確認しやすくなりました。</li></ul></article><article className="border-t border-slate-200 pt-6 dark:border-slate-700"><h3 className="text-base font-black text-slate-800 dark:text-white">■ Ver. 1.0.1（2026年8月）</h3><ul className="mt-3 space-y-2 pl-1"><li>・薬の登録時に「この薬は別に飲む」を設定できるようになりました。</li></ul></article><article className="border-t border-slate-200 pt-6 dark:border-slate-700"><h3 className="text-base font-black text-slate-800 dark:text-white">■ Ver. 1.0.0（2026年8月）</h3><ul className="mt-3 space-y-2 pl-1"><li>・『ノクトのまいにち内服管理アプリ』が誕生！</li><li>・毎日の内服チェックに対応。</li><li>・同じ時間帯に複数の薬を服用する場合もまとめて管理できます。</li><li>・錠剤・カプセルは、同じ服用タイミングなら1回のチェックでまとめて記録できます。</li></ul></article></div></Modal>}
       {modal === "license" && <Modal title="ライセンス・著作権について" onClose={() => setModal(null)}><p className="font-black text-slate-800 dark:text-white">© 2026 ゆうまるす / yongmars. All rights reserved.</p><p className="mt-4">本アプリに登場するキャラクター「ノクト」「ルクス」「朔」、その他のイラスト、アプリアイコン等は、すべて製作者「ゆうまるす」のオリジナル著作物です。画像の無断転載・複製・商用利用は固くお断りいたします。</p></Modal>}
     </div>
   );

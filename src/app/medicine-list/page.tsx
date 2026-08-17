@@ -7,7 +7,7 @@ import { getMedicationPhotos } from "../../lib/medicationPhotos";
 import {
   getMedicationDoseLabel,
   Medication,
-  readMedications,
+  readActiveMedications,
   TIMING_LABELS,
   WEEKDAY_LABELS,
 } from "../../lib/medications";
@@ -38,7 +38,7 @@ export default function MedicationListPage() {
   const [expandedPhoto, setExpandedPhoto] = useState<{ name: string; url: string } | null>(null);
 
   useEffect(() => {
-    const loadedMedications = readMedications();
+    const loadedMedications = readActiveMedications();
     let cancelled = false;
     const createdUrls: string[] = [];
 

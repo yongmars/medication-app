@@ -23,7 +23,7 @@ import {
   Medication,
   MedicationCheckGroup,
   MedicationTimingGroup,
-  readMedications,
+  readActiveMedications,
   ScheduledTiming,
   SCHEDULED_TIMING_GROUPS,
   TIMING_GROUP_LABELS,
@@ -165,7 +165,7 @@ export default function Home() {
   useEffect(() => {
     characterSceneTimer.current = window.setTimeout(() => { setCharacterSceneOverride(null); characterSceneTimer.current = null; }, 1400);
     const hydrateTimer = window.setTimeout(() => {
-      const storedMedications = readMedications();
+      const storedMedications = readActiveMedications();
       setMedications(storedMedications);
       setSelectedTab(getClosestAvailableTab(storedMedications, getAppDateString()));
       setMounted(true);

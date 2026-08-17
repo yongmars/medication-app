@@ -14,7 +14,7 @@ import {
   readNotificationSettings,
   ScheduledNotification,
 } from "../lib/localNotifications";
-import { MEDICATIONS_STORAGE_KEY, MEDICATION_DATA_CHANGED_EVENT, readMedications } from "../lib/medications";
+import { MEDICATIONS_STORAGE_KEY, MEDICATION_DATA_CHANGED_EVENT, readActiveMedications } from "../lib/medications";
 
 const MAX_TIMEOUT_MS = 2_147_000_000;
 
@@ -46,7 +46,7 @@ export default function LocalNotificationScheduler() {
     const schedule = () => {
       clearTimer();
       if (!active || !isNotificationSupported()) return;
-      const next = getNextNotification(readNotificationSettings(), readMedications(), readNotificationSentRecord());
+      const next = getNextNotification(readNotificationSettings(), readActiveMedications(), readNotificationSentRecord());
       if (!next) return;
       const delay = Math.max(0, next.fireAt.getTime() - Date.now());
       timeoutRef.current = setTimeout(async () => { await show(next); schedule(); }, Math.min(delay, MAX_TIMEOUT_MS));
@@ -54,7 +54,7 @@ export default function LocalNotificationScheduler() {
 
     const checkDue = async () => {
       if (!active || !isNotificationSupported()) return;
-      const recent = getRecentDueNotification(readNotificationSettings(), readMedications(), readNotificationSentRecord());
+      const recent = getRecentDueNotification(readNotificationSettings(), readActiveMedications(), readNotificationSentRecord());
       if (recent) await show(recent);
       schedule();
     };

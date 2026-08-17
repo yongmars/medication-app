@@ -17,6 +17,7 @@ export type MedicationUnit = "tablet" | "capsule" | "packet" | "ml" | "other";
 export type MedicationScheduleType = "daily" | "weekdays";
 export type Weekday = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 export type MedicationCheckGroup = "solid" | "packet" | "liquid" | "individual";
+export type MedicationStatus = "active" | "archived";
 
 export interface Medication {
   id: number;
@@ -30,6 +31,8 @@ export interface Medication {
   separateCheck: boolean;
   memo?: string;
   updatedAt?: string;
+  status: MedicationStatus;
+  archivedAt?: string;
 }
 
 export interface TimingRecord {
@@ -141,9 +144,12 @@ export const getWeekdayForAppDate = (appDate: string): Weekday => {
 };
 
 export const isMedicationScheduledForAppDate = (medication: Medication, appDate: string) =>
-  medication.timings.includes("as_needed") ||
-  medication.scheduleType === "daily" ||
-  medication.weekdays.includes(getWeekdayForAppDate(appDate));
+  (!medication.archivedAt || appDate < getAppDateString(new Date(medication.archivedAt))) &&
+  (medication.timings.includes("as_needed") ||
+    medication.scheduleType === "daily" ||
+    medication.weekdays.includes(getWeekdayForAppDate(appDate)));
+
+export const isActiveMedication = (medication: Medication) => medication.status === "active";
 
 export const getSuggestedTiming = (date: Date = new Date()): ScheduledTiming => {
   const minutes = date.getHours() * 60 + date.getMinutes();
@@ -209,6 +215,10 @@ export const normalizeMedication = (value: unknown): Medication | null => {
     separateCheck: source.separateCheck === true,
     memo: typeof source.memo === "string" && source.memo.trim() ? source.memo.trim() : undefined,
     updatedAt: typeof source.updatedAt === "string" && Number.isFinite(Date.parse(source.updatedAt)) ? source.updatedAt : undefined,
+    status: source.status === "archived" ? "archived" : "active",
+    archivedAt: source.status === "archived" && typeof source.archivedAt === "string" && Number.isFinite(Date.parse(source.archivedAt))
+      ? source.archivedAt
+      : undefined,
   };
 };
 
@@ -223,6 +233,8 @@ export const readMedications = (): Medication[] => {
     return [];
   }
 };
+
+export const readActiveMedications = () => readMedications().filter(isActiveMedication);
 
 export const saveMedications = (medications: Medication[]) => {
   const normalized = medications.map(normalizeMedication).filter((item): item is Medication => item !== null);
