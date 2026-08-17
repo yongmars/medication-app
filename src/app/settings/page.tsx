@@ -107,6 +107,7 @@ export default function SettingsPage() {
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | "unsupported">("default");
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
+  const [isArchivedOpen, setIsArchivedOpen] = useState(false);
   const [hasReadUpdate, setHasReadUpdate] = useState(false);
   const [modal, setModal] = useState<"updates" | "license" | null>(null);
   const cameraInput = useRef<HTMLInputElement>(null);
@@ -355,27 +356,6 @@ export default function SettingsPage() {
           </div>
         </section>
 
-        <section className="rounded-3xl border border-slate-200 bg-slate-100/70 p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800/70">
-          <div className="flex items-center justify-between gap-3"><div><h2 className="text-lg font-black text-slate-800 dark:text-white">過去の薬 ({archivedMedications.length})</h2><p className="mt-1 text-xs leading-relaxed text-slate-500 dark:text-slate-400">服用終了した薬です。毎日の服薬や通知には表示されません。</p></div><span className="shrink-0 rounded-full bg-slate-200 px-2.5 py-1 text-xs font-black text-slate-600 dark:bg-slate-700 dark:text-slate-300">服用終了</span></div>
-          <div className="mt-3 space-y-3">
-            {archivedMedications.length === 0 ? <p className="rounded-2xl bg-white p-4 text-center text-sm text-slate-500 dark:bg-slate-800 dark:text-slate-300">過去の薬はありません。</p> : archivedMedications.map((medication) => {
-              const isExpanded = expandedArchivedId === medication.id;
-              const archivedPhotoUrl = archivedPhotoUrls[medication.id];
-              return <article key={medication.id} className="rounded-2xl border border-slate-300 bg-white p-3 dark:border-slate-600 dark:bg-slate-800">
-                <div className="flex items-start justify-between gap-2"><div className="min-w-0"><h3 className="break-words font-black text-slate-800 dark:text-white">{medication.name}</h3><p className="mt-1 text-xs font-bold text-slate-500 dark:text-slate-400">服用終了日：{formatArchivedDate(medication.archivedAt)}</p></div><span className="shrink-0 rounded-full bg-slate-100 px-2 py-1 text-xs font-black text-slate-600 dark:bg-slate-700 dark:text-slate-300">1回 {getMedicationDoseLabel(medication)}</span></div>
-                {isExpanded && <div className="mt-3 rounded-2xl bg-slate-50 p-3 dark:bg-slate-900/70">
-                  <div className="flex gap-3">
-                    {archivedPhotoUrl ? <img src={archivedPhotoUrl} alt={`${medication.name}の写真`} className="h-20 w-20 shrink-0 rounded-xl border border-slate-200 object-cover dark:border-slate-700" /> : <div className="grid h-20 w-20 shrink-0 place-items-center rounded-xl border border-dashed border-slate-300 px-2 text-center text-[11px] font-bold text-slate-400 dark:border-slate-600">{Object.hasOwn(archivedPhotoUrls, medication.id) ? "写真未登録" : "写真確認中"}</div>}
-                    <dl className="min-w-0 flex-1 space-y-2 text-xs"><div><dt className="font-bold text-slate-500">服用タイミング</dt><dd className="mt-0.5 break-words font-bold text-slate-800 dark:text-slate-100">{medication.timings.map((timing) => TIMING_LABELS[timing]).join("・")}</dd></div><div><dt className="font-bold text-slate-500">服用する曜日</dt><dd className="mt-0.5 font-bold text-slate-800 dark:text-slate-100">{medication.scheduleType === "daily" ? "毎日" : medication.weekdays.map((day) => `${WEEKDAY_LABELS[day]}曜`).join("・")}</dd></div><div><dt className="font-bold text-slate-500">他の薬とのまとめ方</dt><dd className="mt-0.5 font-bold text-slate-800 dark:text-slate-100">{medication.separateCheck ? "この薬は別に飲む" : "まとめて飲む"}</dd></div></dl>
-                  </div>
-                  {medication.memo && <div className="mt-3 border-t border-slate-200 pt-3 text-xs dark:border-slate-700"><p className="font-bold text-slate-500">メモ</p><p className="mt-1 break-words text-slate-700 dark:text-slate-200">{medication.memo}</p></div>}
-                </div>}
-                <div className="mt-3 grid grid-cols-2 gap-2"><button onClick={() => void startEdit(medication, true)} className="rounded-xl bg-emerald-600 py-2 text-sm font-bold text-white">再開する</button><button onClick={() => void toggleArchivedDetails(medication)} className="rounded-xl bg-slate-100 py-2 text-sm font-bold text-slate-700 dark:bg-slate-700 dark:text-white">{isExpanded ? "詳細を閉じる" : "詳細を見る"}</button><button onClick={() => void deleteMedication(medication)} className="col-span-2 rounded-xl border border-red-200 bg-white py-2 text-sm font-bold text-red-600 dark:border-red-900/50 dark:bg-slate-800">完全に削除</button></div>
-              </article>;
-            })}
-          </div>
-        </section>
-
         <section id="medication-form" className="scroll-mt-4 overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800">
           <button type="button" onClick={() => setIsFormOpen((open) => !open)} className="flex w-full items-center justify-between px-5 py-5 text-left font-bold text-slate-800 dark:text-white" aria-expanded={isFormOpen}>
             <span className="text-base">{editingId === null ? "＋ お薬を登録する" : restartingId === editingId ? "↩️ 過去の薬を再開する" : "✏️ お薬を編集する"}</span><span className="text-sm text-slate-400">{isFormOpen ? "▲ 閉じる" : "▼ 開く"}</span>
@@ -406,6 +386,29 @@ export default function SettingsPage() {
             <span><span className="block text-base">服薬のお知らせ</span><span className="mt-1 block text-xs font-normal text-slate-500">その日に対象のお薬がある時間だけ通知します。</span></span><span className="flex items-center gap-2"><span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${notifications.enabled ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-600"}`}>{notifications.enabled ? "オン" : "オフ"}</span><span className="text-sm text-slate-400">{isNotificationOpen ? "▲ 閉じる" : "▼ 開く"}</span></span>
           </button>
           {isNotificationOpen && <div className="border-t border-slate-100 px-4 pb-4 pt-4 dark:border-slate-700"><div className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50 p-3 dark:bg-slate-700"><span className="text-sm font-bold text-slate-700 dark:text-slate-200">通知機能</span><button type="button" onClick={() => updateNotifications({ ...notifications, enabled: !notifications.enabled })} className={`rounded-full px-3 py-2 text-xs font-bold ${notifications.enabled ? "bg-emerald-600 text-white" : "bg-slate-200 text-slate-600"}`}>{notifications.enabled ? "オン" : "オフ"}</button></div>{notificationPermission !== "granted" && <button onClick={() => void requestPermission()} disabled={notificationPermission === "unsupported" || notificationPermission === "denied"} className="mt-3 w-full rounded-xl bg-amber-100 py-2.5 text-sm font-bold text-amber-800 disabled:opacity-60 dark:bg-amber-950/30 dark:text-amber-300">{notificationPermission === "unsupported" ? "このブラウザは通知に対応していません" : notificationPermission === "denied" ? "通知がブラウザで拒否されています" : "通知を許可する"}</button>}<div className="mt-4 space-y-2">{SCHEDULED_TIMINGS.map((timing) => <div key={timing} className="flex items-center gap-2 rounded-xl bg-slate-50 p-2 dark:bg-slate-700"><label className="flex min-w-0 flex-1 items-center gap-2 text-sm font-bold text-slate-700 dark:text-slate-200"><input type="checkbox" checked={notifications.slots[timing].enabled} onChange={(event) => updateNotifications({ ...notifications, slots: { ...notifications.slots, [timing]: { ...notifications.slots[timing], enabled: event.target.checked } } })} />{TIMING_LABELS[timing]}</label><input type="time" value={notifications.slots[timing].time} onChange={(event) => updateNotifications({ ...notifications, slots: { ...notifications.slots, [timing]: { ...notifications.slots[timing], time: event.target.value } } })} className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-800" /></div>)}</div><p className="mt-3 text-xs leading-relaxed text-slate-500">時刻は例です。処方の指示に合わせて変更してください。端末やブラウザの状態によって、アプリを完全に閉じている間は通知されない場合があります。</p></div>}
+        </section>
+
+        <section className="overflow-hidden rounded-3xl border border-slate-200 bg-slate-100/70 shadow-sm dark:border-slate-700 dark:bg-slate-800/70">
+          <button type="button" onClick={() => { if (isArchivedOpen) setExpandedArchivedId(null); setIsArchivedOpen((open) => !open); }} className="flex w-full items-center justify-between gap-3 px-5 py-5 text-left text-slate-800 dark:text-white" aria-expanded={isArchivedOpen} aria-controls="archived-medications-list">
+            <span><span className="block text-base font-black">過去の薬 ({archivedMedications.length})</span><span className="mt-1 block text-xs font-normal leading-relaxed text-slate-500 dark:text-slate-400">服用終了した薬です。毎日の服薬や通知には表示されません。</span></span><span className="shrink-0 text-sm font-bold text-slate-400">{isArchivedOpen ? "▲ 閉じる" : "▼ 開く"}</span>
+          </button>
+          {isArchivedOpen && <div id="archived-medications-list" className="space-y-3 border-t border-slate-200 px-4 pb-4 pt-4 dark:border-slate-700">
+            {archivedMedications.length === 0 ? <p className="rounded-2xl bg-white p-4 text-center text-sm text-slate-500 dark:bg-slate-800 dark:text-slate-300">過去の薬はありません。</p> : archivedMedications.map((medication) => {
+              const isExpanded = expandedArchivedId === medication.id;
+              const archivedPhotoUrl = archivedPhotoUrls[medication.id];
+              return <article key={medication.id} className="rounded-2xl border border-slate-300 bg-white p-3 dark:border-slate-600 dark:bg-slate-800">
+                <div className="flex items-start justify-between gap-2"><div className="min-w-0"><h3 className="break-words font-black text-slate-800 dark:text-white">{medication.name}</h3><p className="mt-1 text-xs font-bold text-slate-500 dark:text-slate-400">服用終了日：{formatArchivedDate(medication.archivedAt)}</p></div><span className="shrink-0 rounded-full bg-slate-100 px-2 py-1 text-xs font-black text-slate-600 dark:bg-slate-700 dark:text-slate-300">1回 {getMedicationDoseLabel(medication)}</span></div>
+                {isExpanded && <div className="mt-3 rounded-2xl bg-slate-50 p-3 dark:bg-slate-900/70">
+                  <div className="flex gap-3">
+                    {archivedPhotoUrl ? <img src={archivedPhotoUrl} alt={`${medication.name}の写真`} className="h-20 w-20 shrink-0 rounded-xl border border-slate-200 object-cover dark:border-slate-700" /> : <div className="grid h-20 w-20 shrink-0 place-items-center rounded-xl border border-dashed border-slate-300 px-2 text-center text-[11px] font-bold text-slate-400 dark:border-slate-600">{Object.hasOwn(archivedPhotoUrls, medication.id) ? "写真未登録" : "写真確認中"}</div>}
+                    <dl className="min-w-0 flex-1 space-y-2 text-xs"><div><dt className="font-bold text-slate-500">服用タイミング</dt><dd className="mt-0.5 break-words font-bold text-slate-800 dark:text-slate-100">{medication.timings.map((timing) => TIMING_LABELS[timing]).join("・")}</dd></div><div><dt className="font-bold text-slate-500">服用する曜日</dt><dd className="mt-0.5 font-bold text-slate-800 dark:text-slate-100">{medication.scheduleType === "daily" ? "毎日" : medication.weekdays.map((day) => `${WEEKDAY_LABELS[day]}曜`).join("・")}</dd></div><div><dt className="font-bold text-slate-500">他の薬とのまとめ方</dt><dd className="mt-0.5 font-bold text-slate-800 dark:text-slate-100">{medication.separateCheck ? "この薬は別に飲む" : "まとめて飲む"}</dd></div></dl>
+                  </div>
+                  {medication.memo && <div className="mt-3 border-t border-slate-200 pt-3 text-xs dark:border-slate-700"><p className="font-bold text-slate-500">メモ</p><p className="mt-1 break-words text-slate-700 dark:text-slate-200">{medication.memo}</p></div>}
+                </div>}
+                <div className="mt-3 grid grid-cols-2 gap-2"><button onClick={() => void startEdit(medication, true)} className="rounded-xl bg-emerald-600 py-2 text-sm font-bold text-white">再開する</button><button onClick={() => void toggleArchivedDetails(medication)} className="rounded-xl bg-slate-100 py-2 text-sm font-bold text-slate-700 dark:bg-slate-700 dark:text-white">{isExpanded ? "詳細を閉じる" : "詳細を見る"}</button><button onClick={() => void deleteMedication(medication)} className="col-span-2 rounded-xl border border-red-200 bg-white py-2 text-sm font-bold text-red-600 dark:border-red-900/50 dark:bg-slate-800">完全に削除</button></div>
+              </article>;
+            })}
+          </div>}
         </section>
 
         <div className="border-t border-slate-200 pt-5 dark:border-slate-700">
